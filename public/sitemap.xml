@@ -9,7 +9,7 @@
     <priority>1.0</priority>
     <image:image>
       <image:loc>https://bg.hs-manacost.ru/assets/og-preview.png</image:loc>
-      <image:title>HS-Arena — статистика Арены Hearthstone</image:title>
+      <image:title>Поля сражений Hearthstone от Манакоста</image:title>
     </image:image>
   </url>
 
@@ -31,7 +31,7 @@
     <priority>0.9</priority>
     <image:image>
       <image:loc>https://bg.hs-manacost.ru/main_assets/tier-list.png</image:loc>
-      <image:title>Тир-лист карт Арены Hearthstone</image:title>
+      <image:title>Тир-лист Полей сражений Hearthstone</image:title>
     </image:image>
   </url>
 

@@ -4570,7 +4570,7 @@ export function LoginPanel({
                   required
                   style={{ marginTop: '2px', accentColor: '#8b5a1a' }}
                 />
-                <span>Подтверждаю согласие получать рассылку HS-Arena с новостями, гайдами и обновлениями.</span>
+                <span>Подтверждаю согласие получать рассылку Манакоста с новостями, гайдами и обновлениями.</span>
               </label>
             )}
           </>
@@ -6410,10 +6410,18 @@ const NETWORK_SITES = [
   },
   {
     id: 'arena',
-    label: 'HS-Arena',
-    href: '/',
+    label: 'Арена',
+    href: 'https://arena.hs-manacost.ru/',
     icon: '/arena-logo-icon.webp?v=mana-swirl-20260624',
     tone: 'arena',
+    current: false,
+  },
+  {
+    id: 'battlegrounds',
+    label: 'Поля сражений',
+    href: '/',
+    icon: '/favicon.svg',
+    tone: 'battlegrounds',
     current: true,
   },
 ] as const;
@@ -6424,28 +6432,28 @@ const SITE_URL = 'https://bg.hs-manacost.ru';
 
 const PAGE_META: Record<string, { title: string; description: string; slug: string }> = {
   home:        {
-    title:       'HS-Arena — Тир-лист и Винрейты для Арены Hearthstone',
-    description: 'Актуальная статистика Арены Hearthstone: тир-лист карт, винрейты классов, легендарные группы. Данные обновляются 4 раза в сутки.',
+    title:       'Поля сражений Hearthstone — тир-листы и конструкторы | HS-Manacost',
+    description: 'Поля сражений от Манакоста: тир-листы существ, стратегий, заклинаний, аксессуаров, героев, библиотека карт и конструкторы для Battlegrounds.',
     slug:        '/',
   },
   winrates:    {
-    title:       'Винрейт классов — Арена Hearthstone | HS-Arena',
-    description: 'Актуальные винрейты всех 11 классов в режиме Арена Hearthstone. Рейтинг на основе миллионов партий, обновляется автоматически.',
+    title:       'Конструктор стратегий — Battlegrounds | HS-Manacost',
+    description: 'Конструктор стратегий Полей сражений: существа, фильтры, быстрые слоты, аннотации и экспорт PNG/WebP.',
     slug:        '/classes',
   },
   tierlist:    {
-    title:       'Тир-лист карт — Арена Hearthstone | HS-Arena',
-    description: 'Полный тир-лист карт для каждого класса в режиме Арена Hearthstone. Лучшие карты текущего патча с оценками от S до F.',
+    title:       'Тир-лист Полей сражений — существа, стратегии и аксессуары | HS-Manacost',
+    description: 'Актуальный тир-лист Полей сражений: существа, стратегии, заклинания и аксессуары с данными HSReplay, Firestone и базы Манакоста.',
     slug:        '/tierlist',
   },
   legendaries: {
-    title:       'Легендарки на Арене Hearthstone — Лучшие группы | HS-Arena',
-    description: 'Какую легендарную карту выбрать на Арене? Все группы первого выбора с процентом побед. Обновляется автоматически.',
+    title:       'Конструктор тир-листов — Battlegrounds | HS-Manacost',
+    description: 'Drag-and-drop конструктор тир-листов Полей сражений: герои, существа, заклинания, аксессуары, фоны и экспорт PNG/WebP.',
     slug:        '/legendaries',
   },
   articles:    {
-    title:       'Статьи и гайды по Арене Hearthstone | HS-Arena',
-    description: 'Гайды, разборы и советы по режиму Арена в Hearthstone от команды Manacost.',
+    title:       'Статьи и гайды по Полям сражений Hearthstone | HS-Manacost',
+    description: 'Гайды, разборы и советы по режиму Поля сражений в Hearthstone от команды Манакоста.',
     slug:        '/articles',
   },
 };
@@ -7089,7 +7097,7 @@ export default function App() {
                   lineHeight: 1,
                 }}
               >
-                HS-ARENA.RU
+                Поля сражений
               </span>
               <span
                 className="mt-1 truncate text-[#f6d68a]"
@@ -7100,7 +7108,7 @@ export default function App() {
                   textShadow: '0 2px 4px rgba(0,0,0,0.72)',
                 }}
               >
-                Арена Hearthstone от Манакоста
+                от Манакоста
               </span>
             </span>
           </a>

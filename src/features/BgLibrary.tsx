@@ -452,6 +452,20 @@ function cardMatchesStrategy(card: LibraryCard, strategy: StrategyEntry): boolea
   });
 }
 
+function strategySourceParam(strategy: StrategyEntry): string {
+  return cleanSearch(strategy.source).includes('hsreplay') ? 'hsreplay' : 'firestone';
+}
+
+function strategyTierListPath(strategy: StrategyEntry): string {
+  const params = new URLSearchParams({
+    list: 'strategies',
+    source: strategySourceParam(strategy),
+    strategy: strategy.key,
+  });
+  if (strategy.title) params.set('q', strategy.title);
+  return `/tierlist?${params.toString()}#strategy`;
+}
+
 function metricTone(value: unknown): string {
   const numberValue = Number(value);
   if (!Number.isFinite(numberValue)) return 'text-[#826b49]';
@@ -1131,8 +1145,10 @@ function DetailPage({ kind, pool, dbfId, navigatePath }: { kind: LibraryKind; po
         <h2 className="mb-4 font-hs text-2xl text-[#26374f]">Используется в стратегиях</h2>
         {usedStrategies.length ? (
           <div className="grid gap-3 md:grid-cols-2">
-            {usedStrategies.map(strategy => (
-              <a key={strategy.key} href="/classes" onClick={(event) => { event.preventDefault(); navigatePath('/classes'); }} className="rounded-md border border-[#cbd9ed] bg-[#ffffff] p-4 transition-colors hover:border-[#d3af55]" style={{ textDecoration: 'none' }}>
+            {usedStrategies.map(strategy => {
+              const href = strategyTierListPath(strategy);
+              return (
+              <a key={strategy.key} href={href} className="rounded-md border border-[#cbd9ed] bg-[#ffffff] p-4 transition-colors hover:border-[#d3af55]" style={{ textDecoration: 'none' }}>
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-wide text-[#8a651f]">{strategy.source} · {strategy.tier || 'meta'}</p>
@@ -1149,7 +1165,8 @@ function DetailPage({ kind, pool, dbfId, navigatePath }: { kind: LibraryKind; po
                   ))}
                 </div>
               </a>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <div className="rounded-md border border-[#cbd9ed] bg-[#ffffff] p-6 text-center text-[#657893]">

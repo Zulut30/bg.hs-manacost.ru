@@ -5,9 +5,9 @@ const SITE_URL = 'https://bg.hs-manacost.ru';
 
 const PAGES = {
   '/': {
-    title: 'HS-Arena — Тир-лист и Винрейты для Арены Hearthstone',
-    description: 'Актуальная статистика Арены Hearthstone: тир-лист карт по классам, винрейты, легендарные группы. Данные обновляются автоматически 4 раза в сутки.',
-    h1: 'HS-Arena — Статистика Арены Hearthstone',
+    title: 'Поля сражений Hearthstone — тир-листы и конструкторы | HS-Manacost',
+    description: 'Поля сражений от Манакоста: тир-листы существ, стратегий, заклинаний, аксессуаров, героев, библиотека карт и конструкторы для Battlegrounds.',
+    h1: 'Поля сражений Hearthstone от Манакоста',
     canonical: '/',
     ogType: 'website',
     structuredData: [
@@ -15,8 +15,8 @@ const PAGES = {
         "@type": "WebSite",
         "@id": `${SITE_URL}/#website`,
         "url": SITE_URL,
-        "name": "Manacost Arena",
-        "description": "Актуальная статистика режима Арена в Hearthstone",
+          "name": "Поля сражений от Манакоста",
+          "description": "Тир-листы, библиотека карт и конструкторы для режима Поля сражений Hearthstone",
         "inLanguage": "ru",
         "publisher": {
           "@type": "Organization",
@@ -28,18 +28,18 @@ const PAGES = {
       {
         "@type": "WebApplication",
         "@id": `${SITE_URL}/#app`,
-        "name": "Manacost Arena",
+        "name": "Поля сражений от Манакоста",
         "url": SITE_URL,
-        "description": "Актуальная статистика режима Арена в Hearthstone: тир-лист карт по классам, винрейты, легендарные группы.",
+        "description": "Тир-листы существ, стратегий, заклинаний, аксессуаров, героев, библиотека карт и конструкторы для Battlegrounds.",
         "applicationCategory": "GameApplication",
         "operatingSystem": "Web",
         "inLanguage": "ru",
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "RUB" },
         "featureList": [
-          "Тир-лист карт Арены Hearthstone по всем классам",
-          "Винрейты классов с актуального патча",
-          "Группы легендарных карт для первого выбора",
-          "Автоматическое обновление данных 4 раза в сутки"
+          "Тир-лист существ, стратегий, заклинаний и аксессуаров",
+          "Тир-лист героев Полей сражений",
+          "Библиотека актуальных и архивных карт Battlegrounds",
+          "Конструктор стратегий и конструктор тир-листов с экспортом изображений"
         ]
       },
       {
@@ -53,48 +53,48 @@ const PAGES = {
         "mainEntity": [
           {
             "@type": "Question",
-            "name": "Какой класс лучший на Арене Hearthstone?",
+            "name": "Что есть на сайте Полей сражений от Манакоста?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Актуальные винрейты всех классов обновляются автоматически на странице «Классы». Данные берутся с миллионов реальных Арена-партий."
+              "text": "На сайте есть тир-листы существ, стратегий, заклинаний, аксессуаров и героев, библиотека карт, архив и конструкторы для Battlegrounds."
             }
           },
           {
             "@type": "Question",
-            "name": "Как пользоваться тир-листом карт для Арены?",
+            "name": "Как пользоваться тир-листом Полей сражений?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Выберите класс в шапке тир-листа, затем используйте поиск и фильтр по редкости. Карты ранжированы от S (авто-пик) до F (не брать никогда)."
+              "text": "Откройте раздел «Тир-лист» и переключайтесь между существами, стратегиями, заклинаниями и аксессуарами. В карточках доступны среднее место, источники и подробности."
             }
           },
           {
             "@type": "Question",
-            "name": "Как выбрать легендарку на Арене Hearthstone?",
+            "name": "Где смотреть подробности по картам Battlegrounds?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "На вкладке «Легендарки» показаны все возможные группы первого выбора с процентом побед. Выбирайте группу с наибольшим винрейтом для вашего класса."
+              "text": "В разделе «Библиотека» доступны существа и заклинания с фильтрами, отдельными страницами, статистикой и связью со стратегиями."
             }
           },
           {
             "@type": "Question",
-            "name": "Как часто обновляются данные Арены?",
+            "name": "Можно ли собрать свою стратегию или тир-лист?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Данные обновляются автоматически 4 раза в сутки: в 00:15, 06:15, 12:15 и 18:15 UTC."
+              "text": "Да. В меню «Конструкторы» доступны конструктор стратегий и конструктор тир-листов с полотном, фильтрами и экспортом PNG/WebP."
             }
           }
         ]
       }
     ],
     noscript: `
-      <h1>HS-Arena — Статистика Арены Hearthstone</h1>
-      <p>Актуальная статистика режима Арена в Hearthstone: тир-лист карт, винрейты классов, легендарные группы.</p>
+      <h1>Поля сражений Hearthstone от Манакоста</h1>
+      <p>Тир-листы, библиотека карт и конструкторы для режима Поля сражений Hearthstone.</p>
       <ul>
         <li><a href="/classes">Конструктор стратегий</a> — полотно, карты, аннотации и экспорт PNG/WebP для Полей сражений</li>
-        <li><a href="/tierlist">Тир-лист карт</a> — оценки карт от S до F по классам</li>
+        <li><a href="/tierlist">Тир-лист</a> — существа, стратегии, заклинания и аксессуары</li>
         <li><a href="/legendaries">Конструктор тир-листов</a> — drag-and-drop распределение карт Полей сражений</li>
         <li><a href="/heroes">Герои</a> — тир-лист героев Полей сражений</li>
-        <li><a href="/articles">Статьи и гайды</a> — разборы и советы по Арене</li>
+        <li><a href="/library">Библиотека</a> — актуальные и архивные карты Battlegrounds</li>
       </ul>`
   },
   '/classes': {
@@ -128,11 +128,11 @@ const PAGES = {
       <p><a href="/">На главную</a> | <a href="/tierlist">Тир-лист</a> | <a href="/legendaries">Конструктор тир-листов</a> | <a href="/heroes">Герои</a></p>`
   },
   '/tierlist': {
-    title: 'Тир-лист карт — Арена Hearthstone | HS-Arena',
-    description: 'Полный тир-лист карт для каждого класса в режиме Арена Hearthstone. Лучшие карты текущего патча с оценками от S (авто-пик) до F. Данные с HearthArena и HSReplay.',
+    title: 'Тир-лист Полей сражений — существа, стратегии и аксессуары | HS-Manacost',
+    description: 'Актуальный тир-лист Полей сражений: существа, стратегии, заклинания и аксессуары с данными HSReplay, Firestone и базы Манакоста.',
     canonical: '/tierlist',
     ogType: 'website',
-    h1: 'Тир-лист карт Арены Hearthstone',
+    h1: 'Тир-лист Полей сражений',
     structuredData: [
       {
         "@type": "BreadcrumbList",
@@ -144,8 +144,8 @@ const PAGES = {
       {
         "@type": "ItemList",
         "@id": `${SITE_URL}/tierlist#tierlist`,
-        "name": "Тир-лист карт Арены Hearthstone",
-        "description": "Оценки карт для режима Арена Hearthstone по всем классам от S до F.",
+        "name": "Тир-лист Полей сражений",
+        "description": "Существа, стратегии, заклинания и аксессуары Battlegrounds, распределённые по актуальным тирам.",
         "numberOfItems": 500,
         "itemListElement": [
           { "@type": "ListItem", "position": 1, "name": "Тир S — Отлично (авто-пик)", "url": `${SITE_URL}/tierlist` },
@@ -160,24 +160,22 @@ const PAGES = {
       {
         "@type": "Dataset",
         "@id": `${SITE_URL}/tierlist#dataset`,
-        "name": "Тир-лист карт Арены Hearthstone",
-        "description": "Полный тир-лист карт для каждого класса в режиме Арена Hearthstone с оценками от S до F.",
+        "name": "Тир-лист Полей сражений Hearthstone",
+        "description": "Актуальный тир-лист существ, стратегий, заклинаний и аксессуаров режима Поля сражений.",
         "url": `${SITE_URL}/tierlist`,
         "creator": { "@type": "Organization", "name": "Manacost" },
         "about": {
           "@type": "VideoGame",
           "name": "Hearthstone",
-          "gameMode": "Arena"
+          "gameMode": "Battlegrounds"
         }
       }
     ],
     noscript: `
-      <h1>Тир-лист карт Арены Hearthstone</h1>
-      <p>Полный тир-лист карт для каждого класса в режиме Арена Hearthstone. Лучшие карты текущего патча с оценками от S (авто-пик) до F.</p>
-      <p>Классы: Рыцарь смерти, Охотник на демонов, Друид, Охотник, Маг, Паладин, Жрец, Разбойник, Шаман, Чернокнижник, Воин, Нейтральные.</p>
-      <p>Тиры: S — Отлично, A — Хорошо, B — Выше среднего, C — Средне, D — Ниже среднего, E — Плохо, F — Ужасно.</p>
-      <p>Данные обновляются автоматически с HearthArena и HSReplay.</p>
-      <p><a href="/">На главную</a> | <a href="/classes">Винрейты классов</a> | <a href="/legendaries">Легендарки</a></p>`
+      <h1>Тир-лист Полей сражений Hearthstone</h1>
+      <p>Актуальный тир-лист существ, стратегий, заклинаний и аксессуаров Battlegrounds.</p>
+      <p>Переключайтесь между типами тир-листа, источниками HSReplay и Firestone, и открывайте карты в подробном просмотре.</p>
+      <p><a href="/">На главную</a> | <a href="/classes">Конструктор стратегий</a> | <a href="/library">Библиотека</a></p>`
   },
   '/legendaries': {
     title: 'Конструктор тир-листов — Battlegrounds | HS-Manacost',
@@ -390,11 +388,11 @@ const PAGES = {
       <p><a href="/library">Актуальная библиотека</a> | <a href="/library/archive">Архив</a> | <a href="/library/archive/minions">Архив существ</a></p>`
   },
   '/articles': {
-    title: 'Статьи и гайды по Арене Hearthstone | HS-Arena',
-    description: 'Гайды, разборы мета и советы по режиму Арена в Hearthstone от команды Manacost. Актуальные статьи для игроков всех уровней.',
+    title: 'Статьи и гайды по Полям сражений Hearthstone | HS-Manacost',
+    description: 'Гайды, разборы меты и советы по режиму Поля сражений Hearthstone от команды Манакоста.',
     canonical: '/articles',
     ogType: 'website',
-    h1: 'Статьи и гайды по Арене Hearthstone',
+    h1: 'Статьи и гайды по Полям сражений Hearthstone',
     structuredData: [
       {
         "@type": "BreadcrumbList",
@@ -406,15 +404,15 @@ const PAGES = {
       {
         "@type": "CollectionPage",
         "@id": `${SITE_URL}/articles#collection`,
-        "name": "Статьи и гайды по Арене Hearthstone",
-        "description": "Гайды, разборы и советы по режиму Арена в Hearthstone от команды Manacost.",
+        "name": "Статьи и гайды по Полям сражений Hearthstone",
+        "description": "Гайды, разборы и советы по режиму Поля сражений Hearthstone от команды Манакоста.",
         "url": `${SITE_URL}/articles`
       }
     ],
     noscript: `
-      <h1>Статьи и гайды по Арене Hearthstone</h1>
-      <p>Гайды, разборы мета и советы по режиму Арена от команды Manacost.</p>
-      <p><a href="/">На главную</a> | <a href="/tierlist">Тир-лист карт</a> | <a href="/classes">Винрейты классов</a></p>`
+      <h1>Статьи и гайды по Полям сражений Hearthstone</h1>
+      <p>Гайды, разборы меты и советы по режиму Поля сражений от команды Манакоста.</p>
+      <p><a href="/">На главную</a> | <a href="/tierlist">Тир-лист</a> | <a href="/classes">Конструктор стратегий</a></p>`
   }
 };
 
@@ -436,37 +434,37 @@ function generatePageHtml(baseHtml, pageData, path) {
   );
 
   html = html.replace(
-    /<meta name="description" content="[^"]*"/,
+    /<meta\s+name="description"\s+content="[^"]*"/,
     `<meta name="description" content="${description}"`
   );
 
   html = html.replace(
-    /<link rel="canonical" href="[^"]*"/,
+    /<link\s+rel="canonical"\s+href="[^"]*"/,
     `<link rel="canonical" href="${fullCanonical}"`
   );
 
   html = html.replace(
-    /<meta property="og:url" content="[^"]*"/,
+    /<meta\s+property="og:url"\s+content="[^"]*"/,
     `<meta property="og:url" content="${fullCanonical}"`
   );
 
   html = html.replace(
-    /<meta property="og:title" content="[^"]*"/,
+    /<meta\s+property="og:title"\s+content="[^"]*"/,
     `<meta property="og:title" content="${title}"`
   );
 
   html = html.replace(
-    /<meta property="og:description" content="[^"]*"/,
+    /<meta\s+property="og:description"\s+content="[^"]*"/,
     `<meta property="og:description" content="${description}"`
   );
 
   html = html.replace(
-    /<meta name="twitter:title" content="[^"]*"/,
+    /<meta\s+name="twitter:title"\s+content="[^"]*"/,
     `<meta name="twitter:title" content="${title}"`
   );
 
   html = html.replace(
-    /<meta name="twitter:description" content="[^"]*"/,
+    /<meta\s+name="twitter:description"\s+content="[^"]*"/,
     `<meta name="twitter:description" content="${description}"`
   );
 

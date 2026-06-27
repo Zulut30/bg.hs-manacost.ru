@@ -4570,7 +4570,7 @@ function LoginPanel({
                   required
                   style={{ marginTop: '2px', accentColor: '#8b5a1a' }}
                 />
-                <span>Подтверждаю согласие получать рассылку HS-Arena с новостями, гайдами и обновлениями.</span>
+                <span>Подтверждаю согласие получать рассылку Манакоста с новостями, гайдами и обновлениями.</span>
               </label>
             )}
           </>
@@ -6404,6 +6404,42 @@ const BG_TIER_LISTS: Array<{ id: BattlegroundTierListKey; label: string; shortLa
   { id: 'trinkets', label: 'Тир-лист аксессуаров', shortLabel: 'Аксессуары', description: 'Большие и малые аксессуары, разложенные по актуальным тирам.' },
 ];
 
+function bgNormalizeDeepLinkValue(value: unknown): string {
+  return String(value || '').toLowerCase().replace(/ё/g, 'е').replace(/[^a-zа-я0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+function bgTierListKeyFromValue(value: unknown): BattlegroundTierListKey {
+  const raw = String(value || '').toLowerCase();
+  return BG_TIER_LISTS.some(item => item.id === raw) ? raw as BattlegroundTierListKey : 'minions';
+}
+
+function bgStrategySourceFromValue(value: unknown): BattlegroundStrategySource {
+  return String(value || '').toLowerCase() === 'hsreplay' ? 'hsreplay' : 'firestone';
+}
+
+function bgTierListUrlState(): {
+  list: BattlegroundTierListKey;
+  source: BattlegroundStrategySource;
+  strategyKey: string;
+  strategyTitle: string;
+} {
+  const params = new URLSearchParams(typeof window === 'undefined' ? '' : window.location.search);
+  return {
+    list: bgTierListKeyFromValue(params.get('list')),
+    source: bgStrategySourceFromValue(params.get('source')),
+    strategyKey: params.get('strategy') || '',
+    strategyTitle: params.get('q') || '',
+  };
+}
+
+function bgStrategyMatchesDeepLink(item: any, key: string, title: string): boolean {
+  if (!key && !title) return false;
+  const itemKey = String(item?.key || '');
+  if (key && itemKey === key) return true;
+  if (key && bgNormalizeDeepLinkValue(itemKey) === bgNormalizeDeepLinkValue(key)) return true;
+  return Boolean(title && bgNormalizeDeepLinkValue(bgItemTitle(item)) === bgNormalizeDeepLinkValue(title));
+}
+
 const BG_TIER_ORDER = ['S', 'A', 'B', 'C', 'D'];
 const BG_TIER_BADGES: Record<string, string> = {
   S: 'bg-gradient-to-br from-[#f8e7ad] to-[#b58a2f] text-[#3d2a1e] border-[#fff3c4]',
@@ -6649,11 +6685,12 @@ function bgLightboxItem(item: any, list: BattlegroundTierListKey, tier: string, 
   };
 }
 
-function BattlegroundTierCard({ item, list, tier, index, onOpen }: {
+function BattlegroundTierCard({ item, list, tier, index, highlighted, onOpen }: {
   item: any;
   list: BattlegroundTierListKey;
   tier: string;
   index: number;
+  highlighted?: boolean;
   onOpen: (item: BattlegroundLightboxItem) => void;
 }) {
   const title = bgItemTitle(item);
@@ -6662,7 +6699,15 @@ function BattlegroundTierCard({ item, list, tier, index, onOpen }: {
   if (list === 'strategies') {
     const cards = Array.isArray(item?.cards) ? item.cards.slice(0, 8) : [];
     return (
-      <article className="rounded-lg border border-[#c4a46a]/45 bg-[#fff8ea]/95 p-3 shadow-sm transition-shadow hover:shadow-[0_8px_24px_rgba(61,42,30,0.16)]">
+      <article
+        data-bg-strategy-highlight={highlighted ? 'true' : undefined}
+        data-bg-strategy-key={item?.key || undefined}
+        className={`rounded-lg border p-3 shadow-sm transition-all duration-300 hover:shadow-[0_8px_24px_rgba(61,42,30,0.16)] ${
+          highlighted
+            ? 'border-[#2563eb] bg-[#dbeafe] shadow-[0_0_0_3px_rgba(37,99,235,0.16),0_16px_30px_rgba(37,99,235,0.18)]'
+            : 'border-[#c4a46a]/45 bg-[#fff8ea]/95'
+        }`}
+      >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h4 className="font-hs text-[15px] leading-tight text-[#3d2a1e]">{title}</h4>
@@ -6774,8 +6819,11 @@ function BattlegroundTierCard({ item, list, tier, index, onOpen }: {
 }
 
 function BattlegroundTierList() {
-  const [activeList, setActiveList] = useState<BattlegroundTierListKey>('minions');
-  const [strategySource, setStrategySource] = useState<BattlegroundStrategySource>('firestone');
+  const initialUrlState = bgTierListUrlState();
+  const [activeList, setActiveList] = useState<BattlegroundTierListKey>(initialUrlState.list);
+  const [strategySource, setStrategySource] = useState<BattlegroundStrategySource>(initialUrlState.source);
+  const [highlightStrategyKey, setHighlightStrategyKey] = useState(initialUrlState.strategyKey);
+  const [highlightStrategyTitle, setHighlightStrategyTitle] = useState(initialUrlState.strategyTitle);
   const [data, setData] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -6786,6 +6834,18 @@ function BattlegroundTierList() {
   const [trinketSizeFilter, setTrinketSizeFilter] = useState('ALL');
   const dataCacheRef = useRef<BattlegroundTierCache>({});
   const activeMeta = BG_TIER_LISTS.find(item => item.id === activeList)!;
+
+  useEffect(() => {
+    const syncFromUrl = () => {
+      const next = bgTierListUrlState();
+      setActiveList(next.list);
+      setStrategySource(next.source);
+      setHighlightStrategyKey(next.strategyKey);
+      setHighlightStrategyTitle(next.strategyTitle);
+    };
+    window.addEventListener('popstate', syncFromUrl);
+    return () => window.removeEventListener('popstate', syncFromUrl);
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -6865,6 +6925,7 @@ function BattlegroundTierList() {
     return next;
   }, [activeList, minionRaceFilter, minionTavernFilter, tiers, trinketSizeFilter]);
   const currentLightboxItem = lightboxIndex >= 0 ? lightboxItems[lightboxIndex] : null;
+  const hasStrategyHighlight = activeList === 'strategies' && Boolean(highlightStrategyKey || highlightStrategyTitle);
 
   const openLightbox = useCallback((item: BattlegroundLightboxItem) => {
     const gallery: BattlegroundLightboxItem[] = [];
@@ -6908,6 +6969,15 @@ function BattlegroundTierList() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [currentLightboxItem, lightboxItems.length]);
 
+  useEffect(() => {
+    if (!hasStrategyHighlight || loading) return undefined;
+    const timer = window.setTimeout(() => {
+      const target = document.querySelector<HTMLElement>('[data-bg-strategy-highlight="true"]');
+      if (target) target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [displayedTiers, hasStrategyHighlight, loading]);
+
   return (
     <div className="space-y-5">
       <div className="text-center">
@@ -6925,7 +6995,13 @@ function BattlegroundTierList() {
             <button
               key={item.id}
               type="button"
-              onClick={() => setActiveList(item.id)}
+              onClick={() => {
+                setActiveList(item.id);
+                if (item.id !== 'strategies') {
+                  setHighlightStrategyKey('');
+                  setHighlightStrategyTitle('');
+                }
+              }}
               className="rounded-lg border px-3 py-3 text-left transition-all"
               style={active
                 ? { background: '#dbeafe', borderColor: '#2563eb', color: '#0f172a', boxShadow: '0 8px 18px rgba(37,99,235,0.14)' }
@@ -7072,7 +7148,14 @@ function BattlegroundTierList() {
                     : 'grid gap-3 sm:grid-cols-2 lg:grid-cols-3'}>
                     {items.map((item: any, idx: number) => (
                       <React.Fragment key={`${tier}-${item.id || item.key || item.name || idx}`}>
-                        <BattlegroundTierCard item={item} list={activeList} tier={tier} index={idx} onOpen={openLightbox} />
+                        <BattlegroundTierCard
+                          item={item}
+                          list={activeList}
+                          tier={tier}
+                          index={idx}
+                          highlighted={activeList === 'strategies' && bgStrategyMatchesDeepLink(item, highlightStrategyKey, highlightStrategyTitle)}
+                          onOpen={openLightbox}
+                        />
                       </React.Fragment>
                     ))}
                   </div>
@@ -7596,10 +7679,18 @@ const NETWORK_SITES = [
   },
   {
     id: 'arena',
-    label: 'HS-Arena',
-    href: '/',
+    label: 'Арена',
+    href: 'https://arena.hs-manacost.ru/',
     icon: '/arena-logo-icon.webp?v=mana-swirl-20260624',
     tone: 'arena',
+    current: false,
+  },
+  {
+    id: 'battlegrounds',
+    label: 'Поля сражений',
+    href: '/',
+    icon: '/favicon.svg',
+    tone: 'stats',
     current: true,
   },
 ] as const;
@@ -7610,8 +7701,8 @@ const SITE_URL = 'https://bg.hs-manacost.ru';
 
 const PAGE_META: Record<string, { title: string; description: string; slug: string }> = {
   home:        {
-    title:       'HS-Arena — Тир-лист и Винрейты для Арены Hearthstone',
-    description: 'Актуальная статистика Арены Hearthstone: тир-лист карт, винрейты классов, легендарные группы. Данные обновляются 4 раза в сутки.',
+    title:       'Поля сражений Hearthstone — тир-листы и конструкторы | HS-Manacost',
+    description: 'Поля сражений от Манакоста: тир-листы существ, стратегий, заклинаний, аксессуаров, героев, библиотека карт и конструкторы для Battlegrounds.',
     slug:        '/',
   },
   winrates:    {
@@ -7620,8 +7711,8 @@ const PAGE_META: Record<string, { title: string; description: string; slug: stri
     slug:        '/classes',
   },
   tierlist:    {
-    title:       'Тир-лист карт — Арена Hearthstone | HS-Arena',
-    description: 'Полный тир-лист карт для каждого класса в режиме Арена Hearthstone. Лучшие карты текущего патча с оценками от S до F.',
+    title:       'Тир-лист Полей сражений — существа, стратегии и аксессуары | HS-Manacost',
+    description: 'Актуальный тир-лист Полей сражений: существа, стратегии, заклинания и аксессуары с данными HSReplay, Firestone и базы Манакоста.',
     slug:        '/tierlist',
   },
   legendaries: {
@@ -7640,8 +7731,8 @@ const PAGE_META: Record<string, { title: string; description: string; slug: stri
     slug:        '/library',
   },
   articles:    {
-    title:       'Статьи и гайды по Арене Hearthstone | HS-Arena',
-    description: 'Гайды, разборы и советы по режиму Арена в Hearthstone от команды Manacost.',
+    title:       'Статьи и гайды по Полям сражений Hearthstone | HS-Manacost',
+    description: 'Гайды, разборы и советы по режиму Поля сражений Hearthstone от команды Manacost.',
     slug:        '/articles',
   },
 };
@@ -7867,12 +7958,18 @@ export default function App() {
   }, []);
 
   const navigatePath = useCallback((path: string) => {
-    const tab = tabFromPath(path);
-    if (window.location.pathname !== path || window.location.search || window.location.hash) {
-      window.history.pushState({ tab }, '', path);
+    const nextUrl = new URL(path, window.location.origin);
+    const nextPath = nextUrl.pathname;
+    const nextSearch = nextUrl.search;
+    const nextHash = nextUrl.hash;
+    const nextHref = `${nextPath}${nextSearch}${nextHash}`;
+    const currentHref = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    const tab = tabFromPath(nextPath);
+    if (currentHref !== nextHref) {
+      window.history.pushState({ tab }, '', nextHref);
     }
-    setLocationPath(path);
-    setLocationSearch('');
+    setLocationPath(nextPath);
+    setLocationSearch(nextSearch);
     setActiveTab(tab);
     setMobileMenuOpen(false);
     applyPageMeta(tab);
@@ -8318,7 +8415,7 @@ export default function App() {
                   lineHeight: 1,
                 }}
               >
-                HS-ARENA.RU
+                Поля сражений
               </span>
               <span
                 className="mt-1 truncate text-[#f6d68a]"
@@ -8329,7 +8426,7 @@ export default function App() {
                   textShadow: '0 2px 4px rgba(0,0,0,0.72)',
                 }}
               >
-                Арена Hearthstone от Манакоста
+                от Манакоста
               </span>
             </span>
           </a>
