@@ -25,6 +25,8 @@ interface LibraryCard {
     local_framed?: boolean;
     local_golden?: boolean;
     local_art?: boolean;
+    golden_variant_tavern_tier?: number | null;
+    golden_tier_mismatch?: boolean;
   };
   updated_at?: string;
 }
@@ -268,6 +270,7 @@ function fallbackCardImages(card: LibraryCard, current: string, includeArt = fal
 }
 
 function goldenCardImage(card: LibraryCard): string | null {
+  if (card.asset_status?.golden_tier_mismatch) return null;
   const golden = properImage(card.images?.golden);
   return golden && golden !== primaryCardImage(card) ? golden : null;
 }

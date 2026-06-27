@@ -3343,6 +3343,15 @@ function bgBaseCardId(cardId: string): string {
   return String(cardId || '').replace(/_Gt$/, 't').replace(/_G$/, '');
 }
 
+function bgIsGoldenCardId(cardId: string): boolean {
+  return /_G($|t$)/.test(String(cardId || ''));
+}
+
+function bgNumberOrNull(value: unknown): number | null {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : null;
+}
+
 function bgAssetUrl(cardId: string, folder: 'cards' | 'framed' | 'golden' | 'art'): string | null {
   if (!cardId) return null;
   const ext = folder === 'art' ? 'jpg' : 'png';
@@ -3397,6 +3406,36 @@ function enrichBgLibraryCard(card: any): any {
   };
 }
 
+function annotateBgLibraryCardFamilies(cards: any[]): any[] {
+  const groups = new Map<string, any[]>();
+  for (const card of cards) {
+    const baseId = String(card?.asset_status?.base_card_id || bgBaseCardId(card?.card_id || ''));
+    if (!baseId) continue;
+    const group = groups.get(baseId) || [];
+    group.push(card);
+    groups.set(baseId, group);
+  }
+
+  for (const group of groups.values()) {
+    const baseCard = group.find(card => !bgIsGoldenCardId(String(card?.card_id || '')));
+    const goldenCard = group.find(card => bgIsGoldenCardId(String(card?.card_id || '')));
+    if (!baseCard || !goldenCard) continue;
+
+    const baseTier = bgNumberOrNull(baseCard.tavern_tier);
+    const goldenTier = bgNumberOrNull(goldenCard.tavern_tier);
+    const mismatch = baseTier !== null && goldenTier !== null && baseTier !== goldenTier;
+    for (const card of group) {
+      card.asset_status = {
+        ...(card.asset_status || {}),
+        golden_variant_tavern_tier: goldenTier,
+        golden_tier_mismatch: mismatch,
+      };
+    }
+  }
+
+  return cards;
+}
+
 app.get('/api/bg/library/meta', async (req, res) => {
   try {
     const payload = await fetchJsonWithTimeout(`${BG_LIBRARY_API_BASE}/meta`, {
@@ -3441,7 +3480,7 @@ app.get('/api/bg/library/cards', async (req, res) => {
     } while (page <= totalPages);
 
     const data = {
-      data: allCards,
+      data: annotateBgLibraryCardFamilies(allCards),
       pagination: {
         page: 1,
         per_page: allCards.length,
