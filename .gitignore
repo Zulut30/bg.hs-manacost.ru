@@ -1,0 +1,14 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+.claude/
+!.claude/settings.json
+server/debug/
+server/data/card-images/
+
+.vercel

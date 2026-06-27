@@ -1,0 +1,94 @@
+{
+  "classes": [
+    {
+      "id": "rogue",
+      "name": "Разбойник",
+      "color": "#333333",
+      "textDark": false,
+      "winrate": 52.4,
+      "games": 3582
+    },
+    {
+      "id": "druid",
+      "name": "Друид",
+      "color": "#704a16",
+      "textDark": false,
+      "winrate": 51.3,
+      "games": 1774
+    },
+    {
+      "id": "demon-hunter",
+      "name": "Охотник на демонов",
+      "color": "#224722",
+      "textDark": false,
+      "winrate": 51.3,
+      "games": 1988
+    },
+    {
+      "id": "death-knight",
+      "name": "Рыцарь смерти",
+      "color": "#1f252d",
+      "textDark": false,
+      "winrate": 51.1,
+      "games": 3208
+    },
+    {
+      "id": "priest",
+      "name": "Жрец",
+      "color": "#d1d1d1",
+      "textDark": true,
+      "winrate": 48.7,
+      "games": 1481
+    },
+    {
+      "id": "shaman",
+      "name": "Шаман",
+      "color": "#2a2e6b",
+      "textDark": false,
+      "winrate": 47.8,
+      "games": 1092
+    },
+    {
+      "id": "warrior",
+      "name": "Воин",
+      "color": "#7a1e1e",
+      "textDark": false,
+      "winrate": 47.8,
+      "games": 1067
+    },
+    {
+      "id": "warlock",
+      "name": "Чернокнижник",
+      "color": "#5c265c",
+      "textDark": false,
+      "winrate": 47.4,
+      "games": 812
+    },
+    {
+      "id": "mage",
+      "name": "Маг",
+      "color": "#2b5c85",
+      "textDark": false,
+      "winrate": 44.8,
+      "games": 654
+    },
+    {
+      "id": "hunter",
+      "name": "Охотник",
+      "color": "#1d5921",
+      "textDark": false,
+      "winrate": 39,
+      "games": 157
+    },
+    {
+      "id": "paladin",
+      "name": "Паладин",
+      "color": "#a88a45",
+      "textDark": false,
+      "winrate": 37,
+      "games": 110
+    }
+  ],
+  "updatedAt": "2026-06-21T18:00:22.809Z",
+  "source": "hsreplay.net"
+}
