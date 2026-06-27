@@ -270,7 +270,6 @@ function fallbackCardImages(card: LibraryCard, current: string, includeArt = fal
 }
 
 function goldenCardImage(card: LibraryCard): string | null {
-  if (card.asset_status?.golden_tier_mismatch) return null;
   const golden = properImage(card.images?.golden);
   return golden && golden !== primaryCardImage(card) ? golden : null;
 }
