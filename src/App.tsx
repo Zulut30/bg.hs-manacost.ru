@@ -6417,6 +6417,9 @@ interface BattlegroundHeroTierEntry {
   popularity?: string;
   averagePlace?: string;
   image: string;
+  dbfId?: number;
+  placementDistribution?: string[];
+  sourceId?: string;
 }
 
 interface BattlegroundHeroTierSection {
@@ -6434,6 +6437,52 @@ function parseLegacyHeroTierData(source: string): BattlegroundHeroTierSection[] 
   } catch {
     return [];
   }
+}
+
+function parseLegacyHeroStatic(source: string): { imageByDbfId?: Record<string, string> } {
+  const match = source.match(/window\.heroTierStatic\s*=\s*([\s\S]*?);\s*$/);
+  if (!match) return {};
+  try {
+    const payload = match[1].replace(/;+\s*$/, '');
+    return Function(`"use strict"; return (${payload});`)() as { imageByDbfId?: Record<string, string> };
+  } catch {
+    return {};
+  }
+}
+
+function bgHeroImageFromMap(dbfId: unknown, imageByDbfId: Record<string, string>): string {
+  const raw = imageByDbfId[String(dbfId)] || '';
+  if (!raw) return '/arena-logo-icon.webp?v=mana-swirl-20260624';
+  if (raw.startsWith('/')) return raw;
+  return `/bg-legacy/${raw.replace(/^\.\//, '')}`;
+}
+
+function bgHeroTierTitle(tier: string): string {
+  return `${tier} Тир`;
+}
+
+function groupBgHeroesFromApi(payload: any, imageByDbfId: Record<string, string>): BattlegroundHeroTierSection[] {
+  const heroes = Array.isArray(payload?.view?.heroes) ? payload.view.heroes : [];
+  const grouped = new Map<string, BattlegroundHeroTierEntry[]>();
+  heroes.forEach((hero: any) => {
+    const tier = String(hero?.tier || 'D').trim().toUpperCase();
+    if (!grouped.has(tier)) grouped.set(tier, []);
+    grouped.get(tier)!.push({
+      name: String(hero?.hero || hero?.name || 'Без имени'),
+      popularity: hero?.pick_rate ? String(hero.pick_rate) : undefined,
+      averagePlace: hero?.avg_placement ? String(hero.avg_placement).replace('.', ',') : undefined,
+      image: bgHeroImageFromMap(hero?.dbfId, imageByDbfId),
+      dbfId: Number.isFinite(Number(hero?.dbfId)) ? Number(hero.dbfId) : undefined,
+      placementDistribution: Array.isArray(hero?.placement_distribution) ? hero.placement_distribution.map(String) : undefined,
+      sourceId: payload?.source_id ? String(payload.source_id) : undefined,
+    });
+  });
+
+  return ['S', 'A', 'B', 'C', 'D'].flatMap(tier => {
+    const entries = grouped.get(tier) || [];
+    entries.sort((a, b) => Number(String(a.averagePlace || '99').replace(',', '.')) - Number(String(b.averagePlace || '99').replace(',', '.')));
+    return entries.length ? [{ tier, title: bgHeroTierTitle(tier), heroes: entries }] : [];
+  });
 }
 const BG_RACE_NAMES: Record<string, string> = {
   ALL: 'Все типы',
@@ -7088,6 +7137,7 @@ function BattlegroundTierList() {
 
 function BattlegroundHeroTierList() {
   const [sections, setSections] = useState<BattlegroundHeroTierSection[]>([]);
+  const [sourceLabel, setSourceLabel] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -7095,20 +7145,44 @@ function BattlegroundHeroTierList() {
     let alive = true;
     setLoading(true);
     setError('');
-    fetch('/bg-legacy/tier-data.js?v=heroes-20260626', { cache: 'no-store' })
-      .then(async response => {
-        if (!response.ok) throw new Error('Не удалось загрузить тир-лист героев');
-        const text = await response.text();
-        const parsed = parseLegacyHeroTierData(text);
-        if (!parsed.length) throw new Error('В тир-листе героев нет данных');
-        if (alive) setSections(parsed);
-      })
-      .catch(errorValue => {
-        if (alive) setError(errorValue?.message || 'Не удалось загрузить тир-лист героев');
-      })
-      .finally(() => {
+
+    async function loadHeroes() {
+      try {
+        const staticText = await fetch('/bg-legacy/hero-tiers-data.js?v=heroes-map-20260627', { cache: 'no-store' })
+          .then(response => response.ok ? response.text() : '');
+        const imageByDbfId = parseLegacyHeroStatic(staticText).imageByDbfId || {};
+
+        const apiPayload = await fetch('/api/bg/heroes', { cache: 'no-store' })
+          .then(async response => {
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || !payload?.ok) throw new Error(payload?.error || 'API героев временно недоступен');
+            return payload;
+          });
+
+        const apiSections = groupBgHeroesFromApi(apiPayload, imageByDbfId);
+        if (!apiSections.length) throw new Error('API героев вернул пустой список');
+        if (!alive) return;
+        setSections(apiSections);
+        setSourceLabel(`HSReplay · обновлено ${formatDate(apiPayload.fetched_at)}`);
+      } catch (apiError) {
+        try {
+          const response = await fetch('/bg-legacy/tier-data.js?v=heroes-20260626', { cache: 'no-store' });
+          if (!response.ok) throw new Error('Не удалось загрузить резервный тир-лист героев');
+          const text = await response.text();
+          const parsed = parseLegacyHeroTierData(text);
+          if (!parsed.length) throw new Error('В резервном тир-листе героев нет данных');
+          if (!alive) return;
+          setSections(parsed);
+          setSourceLabel('Резервный локальный снапшот');
+        } catch (fallbackError: any) {
+          if (alive) setError(fallbackError?.message || (apiError as Error)?.message || 'Не удалось загрузить тир-лист героев');
+        }
+      } finally {
         if (alive) setLoading(false);
-      });
+      }
+    }
+
+    void loadHeroes();
     return () => { alive = false; };
   }, []);
 
@@ -7118,8 +7192,9 @@ function BattlegroundHeroTierList() {
         <p className="font-hs text-xs uppercase tracking-[0.18em] text-[#8b6c42]">Поля сражений</p>
         <h2 className="mt-2 font-hs text-3xl text-[#3d2a1e] sm:text-4xl">Герои</h2>
         <p className="mx-auto mt-2 max-w-2xl text-sm text-[#6b4c2a]">
-          Тир-лист героев со старого BG-раздела: портреты, среднее место и популярность без лишних окон.
+          Свежий тир-лист героев из HSReplay: портреты, среднее место и популярность без лишних окон.
         </p>
+        {sourceLabel && <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-[#8b6c42]">{sourceLabel}</p>}
       </div>
 
       {loading && <div className="py-12 text-center font-hs text-[#6b4c2a]">Загружаем героев...</div>}

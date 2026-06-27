@@ -1796,6 +1796,7 @@ async function fetchArenaDecksData(limit = ARENA_DECKS_MAX_LIMIT) {
 
 const DATASET_API_ORIGIN = 'https://api.hs-manacost.ru';
 const DATASET_API_BASE = `${DATASET_API_ORIGIN}/datasets`;
+const BG_HEROES_API_URL = `${DATASET_API_ORIGIN}/demo/view/hsreplay_battlegrounds_heroes`;
 const HEARTHSTONEJSON_RU_CARDS_URL = 'https://api.hearthstonejson.com/v1/latest/ruRU/cards.collectible.json';
 const EXTERNAL_DATASET_CACHE_MS = DATASET_MEMORY_CACHE_MS;
 const TIERLIST_API_CACHE_MS = DATASET_MEMORY_CACHE_MS;
@@ -3317,6 +3318,22 @@ app.get('/api/battlegrounds-card-names', (req, res) => proxyLegacyBattlegroundEn
 app.get('/api/bg-comps', (req, res) => proxyLegacyBattlegroundEndpoint(req, res, '/api/bg-comps'));
 app.get('/api/card-art', (req, res) => proxyLegacyBattlegroundEndpoint(req, res, '/api/card-art'));
 app.get('/api/remote-image', (req, res) => proxyLegacyBattlegroundEndpoint(req, res, '/api/remote-image'));
+
+app.get('/api/bg/heroes', async (req, res) => {
+  try {
+    const payload = await fetchJsonWithTimeout(BG_HEROES_API_URL, {
+      headers: { Accept: 'application/json' },
+    }, 20_000);
+    if (!payload?.ok || !Array.isArray(payload?.view?.heroes)) {
+      return res.status(502).json({ error: 'BG heroes source returned an invalid payload' });
+    }
+    const etagBase = `${payload.fetched_at || Date.now()}-${payload.view.heroes.length}`;
+    const etag = `"bg-heroes-${createHash('sha1').update(etagBase).digest('hex').slice(0, 16)}"`;
+    return sendJsonCached(req, res, payload, etag, 'public, max-age=300, stale-while-revalidate=900');
+  } catch (err: any) {
+    return res.status(502).json({ error: err?.message ?? 'BG heroes unavailable' });
+  }
+});
 
 app.get('/api/bg/tier-lists', async (req, res) => {
   const allowedLists = new Set(['minions', 'strategies', 'spells', 'trinkets', 'all']);
