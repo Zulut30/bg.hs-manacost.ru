@@ -58,19 +58,6 @@ interface MinionDetail extends MinionStat {
   rounds?: MinionRoundStat[];
 }
 
-interface MinionHistoryPayload {
-  history?: Array<{
-    fetched_at: string;
-    impact?: number;
-    combat_winrate?: number;
-    popularity?: number;
-    games_with_minion?: number;
-    avg_placement_with?: number;
-    avg_placement_without?: number;
-    tavern_tier?: number;
-  }>;
-}
-
 interface FirestoneSpellStat {
   id: string;
   card_id: string;
@@ -112,6 +99,13 @@ const SITE_URL = 'https://bg.hs-manacost.ru';
 const TAVERN_TIERS = [1, 2, 3, 4, 5, 6, 7];
 const INITIAL_VISIBLE_CARDS = 96;
 const MORE_VISIBLE_CARDS = 96;
+const ARCHIVE_PAGE_SIZE = 72;
+
+const CARD_NAME_OVERRIDES: Record<string, string> = {
+  'bacon blood gem': 'Кровавые самоцветы',
+  'bacon pass tooltip': 'Передача карт',
+  'bacon refresh': 'Обновление таверны',
+};
 
 const RACE_ICON_BY_SLUG: Record<string, string> = {
   all: '/bg-legacy/assset/общее.webp',
@@ -166,7 +160,7 @@ function slugify(value: string): string {
 }
 
 function cardSlug(card: LibraryCard): string {
-  return `${slugify(card.name?.ru || card.name?.en || card.card_id)}-${card.dbf}`;
+  return `${slugify(cardRuName(card) || card.name?.en || card.card_id)}-${card.dbf}`;
 }
 
 function dbfFromPath(path: string): number | null {
@@ -189,28 +183,97 @@ function cardPath(card: LibraryCard, pool: PoolMode): string {
   return `${prefix}/${cardSlug(card)}`;
 }
 
+function cardRuName(card: LibraryCard): string {
+  const keys = [card.name?.ru, card.name?.en, card.card_id].map(value => cleanSearch(String(value || '')));
+  for (const key of keys) {
+    if (CARD_NAME_OVERRIDES[key]) return CARD_NAME_OVERRIDES[key];
+  }
+  return card.name?.ru || card.name?.en || card.card_id;
+}
+
+function cardEnName(card: LibraryCard): string {
+  return card.name?.en || card.card_id;
+}
+
+function isArtOnlyImage(url?: string | null): boolean {
+  return Boolean(url && (/\/uploads\/art\//.test(url) || /\/v1\/orig\//.test(url)));
+}
+
+function properImage(url?: string | null): string | null {
+  return url && !isArtOnlyImage(url) ? url : null;
+}
+
+function localDbImageUrl(cardId: string, folder: 'cards' | 'framed' | 'golden' | 'art'): string {
+  const ext = folder === 'art' ? 'jpg' : 'png';
+  return `https://db.kolodahs.ru/uploads/${folder}/${encodeURIComponent(cardId)}.${ext}`;
+}
+
+function isLikelyGoldenCardId(cardId: string): boolean {
+  return /_G($|t$)/.test(cardId);
+}
+
+function baseCardId(cardId: string): string {
+  return cardId.replace(/_Gt$/, 't').replace(/_G$/, '');
+}
+
+function uniqueStrings(values: Array<string | null | undefined>): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  values.forEach(value => {
+    if (!value || seen.has(value)) return;
+    seen.add(value);
+    result.push(value);
+  });
+  return result;
+}
+
+function cardImageCandidates(card: LibraryCard, includeArt = false): string[] {
+  const id = card.card_id || '';
+  const baseId = baseCardId(id);
+  const isGoldenId = id && isLikelyGoldenCardId(id) && baseId !== id;
+  const baseFallbacks = isGoldenId
+    ? [
+        localDbImageUrl(baseId, 'cards'),
+        localDbImageUrl(baseId, 'framed'),
+        localDbImageUrl(baseId, 'golden'),
+        `https://art.hearthstonejson.com/v1/bgs/latest/ruRU/512x/${encodeURIComponent(baseId)}.png`,
+      ]
+    : [];
+  return uniqueStrings([
+    ...baseFallbacks,
+    properImage(card.images?.card),
+    properImage(card.images?.framed),
+    properImage(card.images?.golden),
+    includeArt ? card.images?.art : null,
+  ]);
+}
+
 function primaryCardImage(card: LibraryCard): string | null {
-  return card.images?.card || card.images?.framed || card.images?.golden || null;
+  return cardImageCandidates(card, false)[0] || null;
 }
 
 function detailCardImage(card: LibraryCard): string | null {
-  return primaryCardImage(card) || card.images?.art || null;
+  return cardImageCandidates(card, true)[0] || null;
 }
 
-function fallbackCardImage(card: LibraryCard, current: string): string | null {
-  return [card.images?.framed, card.images?.golden, card.images?.card, card.images?.art]
-    .find(candidate => Boolean(candidate) && candidate !== current) || null;
+function fallbackCardImages(card: LibraryCard, current: string, includeArt = false): string[] {
+  return cardImageCandidates(card, includeArt).filter(candidate => candidate !== current);
 }
 
 function goldenCardImage(card: LibraryCard): string | null {
-  return card.images?.golden && card.images.golden !== primaryCardImage(card) ? card.images.golden : null;
+  const id = baseCardId(card.card_id || '');
+  const localGolden = id ? localDbImageUrl(id, 'golden') : null;
+  const golden = properImage(card.images?.golden) || localGolden;
+  return golden && golden !== primaryCardImage(card) ? golden : null;
 }
 
 function hideBrokenTileImage(event: React.SyntheticEvent<HTMLImageElement>): void {
   const image = event.currentTarget;
-  const fallback = image.dataset.fallback;
-  if (fallback && image.dataset.fallbackTried !== 'true') {
-    image.dataset.fallbackTried = 'true';
+  const fallbacks = (image.dataset.fallbacks || '').split('|').filter(Boolean);
+  const index = Number(image.dataset.fallbackIndex || 0);
+  const fallback = fallbacks[index];
+  if (fallback) {
+    image.dataset.fallbackIndex = String(index + 1);
     image.src = fallback;
     return;
   }
@@ -224,8 +287,16 @@ function hideBrokenImage(event: React.SyntheticEvent<HTMLImageElement>): void {
 
 function fallbackBrokenHeroImage(event: React.SyntheticEvent<HTMLImageElement>): void {
   const image = event.currentTarget;
-  if (image.dataset.fallbackTried !== 'true') {
-    image.dataset.fallbackTried = 'true';
+  const fallbacks = (image.dataset.fallbacks || '').split('|').filter(Boolean);
+  const index = Number(image.dataset.fallbackIndex || 0);
+  const fallback = fallbacks[index];
+  if (fallback) {
+    image.dataset.fallbackIndex = String(index + 1);
+    image.src = fallback;
+    return;
+  }
+  if (image.dataset.logoFallbackTried !== 'true') {
+    image.dataset.logoFallbackTried = 'true';
     image.src = '/arena-logo-icon.webp?v=mana-swirl-20260624';
     return;
   }
@@ -235,7 +306,7 @@ function fallbackBrokenHeroImage(event: React.SyntheticEvent<HTMLImageElement>):
 function cardFamilyKey(card: LibraryCard): string {
   return [
     card.card_type.slug,
-    cleanSearch(card.name?.ru || card.name?.en || card.card_id),
+    cleanSearch(cardRuName(card) || card.name?.en || card.card_id),
     cleanSearch(card.name?.en || ''),
     card.tavern_tier || 'none',
     card.creature_type?.slug || 'none',
@@ -318,6 +389,7 @@ function searchText(card: LibraryCard): string {
   return cleanSearch([
     card.name?.ru,
     card.name?.en,
+    cardRuName(card),
     card.card_id,
     card.dbf,
     card.text_ru,
@@ -389,6 +461,7 @@ function MetricCard({ label, value, caption, tone }: { label: string; value: str
 }
 
 function MiniChart({ points, color = '#f1d47b', unit = '', invert = false }: { points: Array<{ x: string | number; y: number }>; color?: string; unit?: string; invert?: boolean }) {
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const clean = points.filter(point => Number.isFinite(Number(point.y)));
   if (clean.length < 2) return <div className="flex h-44 items-center justify-center text-sm text-[#657893]">Недостаточно точек для графика</div>;
   const width = 560;
@@ -407,17 +480,42 @@ function MiniChart({ points, color = '#f1d47b', unit = '', invert = false }: { p
   };
   const path = clean.map((point, index) => `${index === 0 ? 'M' : 'L'}${xFor(index).toFixed(1)} ${yFor(Number(point.y)).toFixed(1)}`).join(' ');
   const last = clean[clean.length - 1];
+  const active = clean[activeIndex ?? clean.length - 1];
+  const activeSafeIndex = Math.max(0, activeIndex ?? clean.length - 1);
+  const activeX = xFor(activeSafeIndex);
+  const activeY = yFor(Number(active.y));
+  const activeValue = `${formatDecimal(active.y, unit === '%' ? 1 : 2)}${unit}`;
+  const moveActivePoint = (event: React.PointerEvent<SVGSVGElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const position = Math.min(Math.max(event.clientX - rect.left, 0), rect.width);
+    const ratio = position / Math.max(1, rect.width);
+    const index = Math.round(ratio * (clean.length - 1));
+    setActiveIndex(Math.min(clean.length - 1, Math.max(0, index)));
+  };
   return (
-    <div className="overflow-hidden rounded-md border border-[#d3deef] bg-[#fbfdff]">
-      <svg viewBox={`0 0 ${width} ${height}`} role="img" className="h-48 w-full">
+    <div className="relative overflow-hidden rounded-md border border-[#d3deef] bg-[#fbfdff]">
+      <div className="pointer-events-none absolute right-3 top-3 z-10 rounded-md border border-[#cbd9ed] bg-white/95 px-3 py-2 text-sm shadow-sm">
+        <p className="font-semibold text-[#26374f]">Ход: {String(active.x).slice(0, 10)}</p>
+        <p className="mt-1 text-[#657893]"><span className="mr-2 inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />{activeValue}</p>
+      </div>
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        role="img"
+        className="h-48 w-full touch-none cursor-crosshair"
+        onPointerMove={moveActivePoint}
+        onPointerLeave={() => setActiveIndex(null)}
+        onPointerDown={moveActivePoint}
+      >
         {[0, 1, 2, 3].map(line => {
           const y = padY + (line / 3) * (height - padY * 2);
           return <line key={line} x1={padX} x2={width - padX} y1={y} y2={y} stroke="rgba(89,103,126,0.18)" />;
         })}
+        <line x1={activeX} x2={activeX} y1={padY} y2={height - padY} stroke="rgba(38,55,79,0.24)" strokeDasharray="4 6" />
         <path d={path} fill="none" stroke={color} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
         {clean.map((point, index) => (
           <circle key={`${point.x}-${index}`} cx={xFor(index)} cy={yFor(Number(point.y))} r="4" fill={color} stroke="#fbfdff" strokeWidth="2" />
         ))}
+        <circle cx={activeX} cy={activeY} r="7" fill={color} stroke="#26374f" strokeWidth="2" />
         <text x={padX} y={height - 6} fill="#657893" fontSize="13">{String(clean[0].x).slice(0, 10)}</text>
         <text x={width - padX} y={height - 6} textAnchor="end" fill="#657893" fontSize="13">{String(last.x).slice(0, 10)}</text>
         <text x={width - padX} y={padY - 7} textAnchor="end" fill="#26374f" fontSize="14">{formatDecimal(last.y, unit === '%' ? 1 : 2)}{unit}</text>
@@ -455,7 +553,7 @@ function LibraryCardTile({
 }) {
   const href = cardPath(card, pool);
   const image = primaryCardImage(card) || '/arena-logo-icon.webp?v=mana-swirl-20260624';
-  const fallback = fallbackCardImage(card, image);
+  const fallbacks = fallbackCardImages(card, image, false);
   const golden = goldenCardImage(card);
   return (
     <a
@@ -468,23 +566,23 @@ function LibraryCardTile({
       <div className="relative mx-auto aspect-[0.72] w-full max-w-[240px]">
         <img
           src={image}
-          alt={card.name.ru}
+          alt={cardRuName(card)}
           className="relative z-10 h-full w-full object-contain drop-shadow-[0_16px_20px_rgba(21,31,47,0.22)] transition duration-200 group-hover:scale-[1.03] sm:group-hover:-translate-x-5"
           loading="lazy"
-          data-fallback={fallback || undefined}
+          data-fallbacks={fallbacks.join('|') || undefined}
           onError={hideBrokenTileImage}
         />
         {golden && (
           <img
             src={golden}
-            alt={`${card.name.ru}, золотая версия`}
+            alt={`${cardRuName(card)}, золотая версия`}
             className="pointer-events-none absolute inset-0 z-20 h-full w-full translate-x-2 object-contain opacity-0 drop-shadow-[0_20px_26px_rgba(21,31,47,0.28)] transition duration-200 group-hover:translate-x-8 group-hover:opacity-100 sm:group-hover:translate-x-12"
             loading="lazy"
             onError={hideBrokenImage}
           />
         )}
       </div>
-      <span className="sr-only">Открыть страницу карты {card.name.ru}</span>
+      <span className="sr-only">Открыть страницу карты {cardRuName(card)}</span>
     </a>
   );
 }
@@ -502,10 +600,12 @@ function ChartPanel({ title, subtitle, children }: { title: string; subtitle?: s
 function LibraryListPage({ kind, pool, navigatePath }: { kind: LibraryKind; pool: PoolMode; navigatePath: (path: string) => void }) {
   const { cards, meta, loading, error } = useLibraryData(kind, pool);
   const [query, setQuery] = useState('');
-  const [tavern, setTavern] = useState('ALL');
-  const [race, setRace] = useState('ALL');
+  const [tavernFilters, setTavernFilters] = useState<string[]>([]);
+  const [raceFilters, setRaceFilters] = useState<string[]>([]);
   const [mechanic, setMechanic] = useState('ALL');
+  const [includeDuos, setIncludeDuos] = useState(false);
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_CARDS);
+  const [archivePage, setArchivePage] = useState(1);
 
   useEffect(() => {
     const section = kind === 'spell' ? 'spells' : 'minions';
@@ -522,7 +622,8 @@ function LibraryListPage({ kind, pool, navigatePath }: { kind: LibraryKind; pool
 
   useEffect(() => {
     setVisibleCount(INITIAL_VISIBLE_CARDS);
-  }, [query, tavern, race, mechanic, kind, pool]);
+    setArchivePage(1);
+  }, [query, tavernFilters, raceFilters, mechanic, includeDuos, kind, pool]);
 
   const imageReadyCards = useMemo(() => cards.filter(card => primaryCardImage(card)), [cards]);
   const hiddenWithoutImage = Math.max(0, cards.length - imageReadyCards.length);
@@ -548,17 +649,25 @@ function LibraryListPage({ kind, pool, navigatePath }: { kind: LibraryKind; pool
   const filtered = useMemo(() => {
     const needle = cleanSearch(query);
     const rows: LibraryCard[] = [];
+    const tavernSet = new Set(tavernFilters);
+    const raceSet = new Set(raceFilters);
     for (const card of imageReadyCards) {
       if (needle && searchText(card).indexOf(needle) === -1) continue;
-      if (tavern !== 'ALL' && String(card.tavern_tier || '') !== tavern) continue;
-      if (kind === 'minion' && race !== 'ALL' && card.creature_type?.slug !== race) continue;
+      if (!includeDuos && card.duos_only) continue;
+      if (tavernSet.size > 0 && !tavernSet.has(String(card.tavern_tier || ''))) continue;
+      if (kind === 'minion' && raceSet.size > 0 && !raceSet.has(card.creature_type?.slug || '')) continue;
       if (mechanic !== 'ALL' && !(card.mechanics || []).some(item => item.slug === mechanic)) continue;
       rows.push(card);
     }
-    return rows.sort((a, b) => Number(a.tavern_tier || 99) - Number(b.tavern_tier || 99) || a.name.ru.localeCompare(b.name.ru, 'ru'));
-  }, [imageReadyCards, kind, mechanic, query, race, tavern]);
+    return rows.sort((a, b) => Number(a.tavern_tier || 99) - Number(b.tavern_tier || 99) || cardRuName(a).localeCompare(cardRuName(b), 'ru'));
+  }, [imageReadyCards, includeDuos, kind, mechanic, query, raceFilters, tavernFilters]);
 
-  const visible = filtered.slice(0, visibleCount);
+  const archivePageCount = Math.max(1, Math.ceil(filtered.length / ARCHIVE_PAGE_SIZE));
+  const normalizedArchivePage = Math.min(archivePage, archivePageCount);
+  const archiveStart = (normalizedArchivePage - 1) * ARCHIVE_PAGE_SIZE;
+  const visible = pool === 'archive'
+    ? filtered.slice(archiveStart, archiveStart + ARCHIVE_PAGE_SIZE)
+    : filtered.slice(0, visibleCount);
   const grouped = useMemo(() => {
     const groups = new Map<string, LibraryCard[]>();
     visible.forEach(card => {
@@ -572,6 +681,19 @@ function LibraryListPage({ kind, pool, navigatePath }: { kind: LibraryKind; pool
   const basePath = pool === 'archive' ? '/library/archive' : '/library';
   const kindTitle = kind === 'minion' ? 'Существа' : 'Заклинания';
   const poolTitle = pool === 'archive' ? 'Архив' : 'Актуальный пул';
+  const toggleTavern = (tier: string) => {
+    setTavernFilters(current => current.includes(tier) ? current.filter(item => item !== tier) : [...current, tier]);
+  };
+  const toggleRace = (slug: string) => {
+    setRaceFilters(current => current.includes(slug) ? current.filter(item => item !== slug) : [...current, slug]);
+  };
+  const archivePages = useMemo(() => {
+    const pages = new Set<number>([1, archivePageCount, normalizedArchivePage]);
+    for (let page = normalizedArchivePage - 2; page <= normalizedArchivePage + 2; page += 1) {
+      if (page >= 1 && page <= archivePageCount) pages.add(page);
+    }
+    return Array.from(pages).sort((a, b) => a - b);
+  }, [archivePageCount, normalizedArchivePage]);
 
   return (
     <div className="space-y-6 text-[#26374f]">
@@ -618,12 +740,33 @@ function LibraryListPage({ kind, pool, navigatePath }: { kind: LibraryKind; pool
         <div className="mt-4 space-y-4">
           <details className="rounded-md border border-[#cbd9ed] bg-[#ffffff] p-3" open>
             <summary className="flex cursor-pointer list-none items-center justify-between font-hs text-sm text-[#26374f]">
+              <span>Формат</span><ChevronDown size={16} />
+            </summary>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setIncludeDuos(value => !value)}
+                className={`inline-flex min-h-10 items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold transition-colors ${
+                  includeDuos ? 'border-[#e4c675] bg-[#e4c675] text-[#101827]' : 'border-[#cbd9ed] bg-white text-[#34445c] hover:border-[#d3af55]'
+                }`}
+              >
+                <span className={`h-4 w-8 rounded-full p-0.5 transition-colors ${includeDuos ? 'bg-[#26374f]' : 'bg-[#cbd9ed]'}`}>
+                  <span className={`block h-3 w-3 rounded-full bg-white transition-transform ${includeDuos ? 'translate-x-4' : ''}`} />
+                </span>
+                Показывать карты Duo
+              </button>
+              <span className="text-sm text-[#657893]">Выключено: список ближе к одиночному формату. Включено: добавляются карты дуо-режима.</span>
+            </div>
+          </details>
+
+          <details className="rounded-md border border-[#cbd9ed] bg-[#ffffff] p-3" open>
+            <summary className="flex cursor-pointer list-none items-center justify-between font-hs text-sm text-[#26374f]">
               <span className="flex items-center gap-2"><Filter size={16} />Уровень таверны</span><ChevronDown size={16} />
             </summary>
             <div className="mt-3 flex flex-wrap gap-2">
-              <FilterChip active={tavern === 'ALL'} onClick={() => setTavern('ALL')}>Все уровни</FilterChip>
+              <FilterChip active={tavernFilters.length === 0} onClick={() => setTavernFilters([])}>Все уровни</FilterChip>
               {TAVERN_TIERS.map(tier => (
-                <FilterChip key={tier} active={tavern === String(tier)} onClick={() => setTavern(String(tier))} title={`Таверна ${tier}`}>
+                <FilterChip key={tier} active={tavernFilters.includes(String(tier))} onClick={() => toggleTavern(String(tier))} title={`Таверна ${tier}`}>
                   <img src={tavernIcon(tier)} alt="" className="h-7 w-7" loading="lazy" />Таверна {tier}
                 </FilterChip>
               ))}
@@ -636,9 +779,9 @@ function LibraryListPage({ kind, pool, navigatePath }: { kind: LibraryKind; pool
                 <span>Тип существа</span><ChevronDown size={16} />
               </summary>
               <div className="mt-3 flex flex-wrap gap-2">
-                <FilterChip active={race === 'ALL'} onClick={() => setRace('ALL')}>Все типы</FilterChip>
+                <FilterChip active={raceFilters.length === 0} onClick={() => setRaceFilters([])}>Все типы</FilterChip>
                 {creatureTypes.map(([slug, label]) => (
-                  <FilterChip key={slug} active={race === slug} onClick={() => setRace(slug)}>
+                  <FilterChip key={slug} active={raceFilters.includes(slug)} onClick={() => toggleRace(slug)}>
                     {RACE_ICON_BY_SLUG[slug] && <img src={RACE_ICON_BY_SLUG[slug]} alt="" className="h-7 w-7 rounded-full" loading="lazy" />}{label}
                   </FilterChip>
                 ))}
@@ -665,7 +808,7 @@ function LibraryListPage({ kind, pool, navigatePath }: { kind: LibraryKind; pool
           <div>
             <p className="font-hs text-xl text-[#26374f]">{kindTitle} · {poolTitle}</p>
             <p className="text-sm text-[#657893]">
-              Показано {Math.min(visibleCount, filtered.length)} из {filtered.length}. Всего загружено {cards.length}.
+              Показано {pool === 'archive' ? visible.length : Math.min(visibleCount, filtered.length)} из {filtered.length}. Всего загружено {cards.length}.
               {hiddenWithoutImage > 0 && ` Без изображения скрыто: ${hiddenWithoutImage}.`}
             </p>
           </div>
@@ -697,7 +840,30 @@ function LibraryListPage({ kind, pool, navigatePath }: { kind: LibraryKind; pool
           ))}
         </div>
 
-        {visibleCount < filtered.length && (
+        {pool === 'archive' && filtered.length > ARCHIVE_PAGE_SIZE && (
+          <div className="mt-8 flex flex-wrap items-center justify-center gap-2">
+            <button type="button" disabled={normalizedArchivePage === 1} onClick={() => setArchivePage(page => Math.max(1, page - 1))} className="rounded-md border border-[#cbd9ed] bg-white px-4 py-2 font-semibold text-[#33445d] disabled:cursor-not-allowed disabled:opacity-45">
+              Назад
+            </button>
+            {archivePages.map((page, index) => (
+              <React.Fragment key={page}>
+                {index > 0 && page - archivePages[index - 1] > 1 && <span className="px-1 text-[#657893]">...</span>}
+                <button
+                  type="button"
+                  onClick={() => setArchivePage(page)}
+                  className={`h-10 min-w-10 rounded-md border px-3 font-semibold ${page === normalizedArchivePage ? 'border-[#e4c675] bg-[#e4c675] text-[#101827]' : 'border-[#cbd9ed] bg-white text-[#33445d] hover:border-[#d3af55]'}`}
+                >
+                  {page}
+                </button>
+              </React.Fragment>
+            ))}
+            <button type="button" disabled={normalizedArchivePage === archivePageCount} onClick={() => setArchivePage(page => Math.min(archivePageCount, page + 1))} className="rounded-md border border-[#cbd9ed] bg-white px-4 py-2 font-semibold text-[#33445d] disabled:cursor-not-allowed disabled:opacity-45">
+              Вперёд
+            </button>
+          </div>
+        )}
+
+        {pool !== 'archive' && visibleCount < filtered.length && (
           <div className="mt-8 text-center">
             <button type="button" onClick={() => setVisibleCount(count => count + MORE_VISIBLE_CARDS)} className="rounded-md border border-[#e4c675] bg-[#e4c675] px-6 py-3 font-hs text-[#101827]">
               Показать ещё
@@ -712,7 +878,6 @@ function LibraryListPage({ kind, pool, navigatePath }: { kind: LibraryKind; pool
 function DetailPage({ kind, pool, dbfId, navigatePath }: { kind: LibraryKind; pool: PoolMode; dbfId: number; navigatePath: (path: string) => void }) {
   const [card, setCard] = useState<LibraryCard | null>(null);
   const [detail, setDetail] = useState<MinionDetail | null>(null);
-  const [history, setHistory] = useState<MinionHistoryPayload | null>(null);
   const [spellStats, setSpellStats] = useState<FirestoneSpellStat[]>([]);
   const [relatedCards, setRelatedCards] = useState<LibraryCard[]>([]);
   const [strategies, setStrategies] = useState<StrategyEntry[]>([]);
@@ -730,7 +895,6 @@ function DetailPage({ kind, pool, dbfId, navigatePath }: { kind: LibraryKind; po
     ];
     if (kind === 'minion' && pool === 'current') {
       baseRequests.push(fetchJsonOrNull<MinionDetail>(`/api/bg/library/minions/${dbfId}`));
-      baseRequests.push(fetchJsonOrNull<MinionHistoryPayload>(`/api/bg/library/minions/${dbfId}/history`));
     } else if (kind === 'spell' && pool === 'current') {
       baseRequests.push(fetchJsonOrNull<any>('/api/bg/library/spell-stats'));
     } else {
@@ -746,23 +910,21 @@ function DetailPage({ kind, pool, dbfId, navigatePath }: { kind: LibraryKind; po
         setRelatedCards(dedupeLibraryCards(((results[2] as { data?: LibraryCard[] }).data || []).filter(item => item.dbf !== loadedCard.dbf)));
         if (kind === 'minion' && pool === 'current') {
           setDetail(results[3] as MinionDetail | null);
-          setHistory((results[4] as MinionHistoryPayload | null) || null);
           setSpellStats([]);
         } else if (kind === 'spell' && pool === 'current') {
           setSpellStats(results[3] ? flattenSpellStats(results[3]) : []);
           setDetail(null);
-          setHistory(null);
         } else {
           setSpellStats([]);
           setDetail(null);
-          setHistory(null);
         }
+        const loadedCardName = cardRuName(loadedCard);
         const title = pool === 'archive'
-          ? `${loadedCard.name.ru} — архивная карта BG Hearthstone | HS-Manacost`
-          : `${loadedCard.name.ru} — статистика ${kind === 'minion' ? 'существа' : 'заклинания'} BG Hearthstone | HS-Manacost`;
+          ? `${loadedCardName} — архивная карта BG Hearthstone | HS-Manacost`
+          : `${loadedCardName} — статистика ${kind === 'minion' ? 'существа' : 'заклинания'} BG Hearthstone | HS-Manacost`;
         const description = pool === 'archive'
-          ? `${loadedCard.name.ru}: архивная карта Полей сражений Hearthstone вне активного пула.`
-          : `${loadedCard.name.ru}: таверна ${loadedCard.tavern_tier || '—'}, ${loadedCard.creature_type?.name_ru || 'заклинание'}, механики и актуальная статистика Полей сражений.`;
+          ? `${loadedCardName}: архивная карта Полей сражений Hearthstone вне активного пула.`
+          : `${loadedCardName}: таверна ${loadedCard.tavern_tier || '—'}, ${loadedCard.creature_type?.name_ru || 'заклинание'}, механики и актуальная статистика Полей сражений.`;
         setLibraryMeta(title, description, cardPath(loadedCard, pool), detailCardImage(loadedCard));
       })
       .catch(errorValue => {
@@ -791,7 +953,7 @@ function DetailPage({ kind, pool, dbfId, navigatePath }: { kind: LibraryKind; po
       if (score > 0) scored.push({ item, score });
     }
     return scored
-      .sort((a, b) => b.score - a.score || a.item.name.ru.localeCompare(b.item.name.ru, 'ru'))
+      .sort((a, b) => b.score - a.score || cardRuName(a.item).localeCompare(cardRuName(b.item), 'ru'))
       .slice(0, 6)
       .map(row => row.item);
   }, [card, relatedCards]);
@@ -801,12 +963,12 @@ function DetailPage({ kind, pool, dbfId, navigatePath }: { kind: LibraryKind; po
 
   const backPath = pool === 'archive' ? `/library/archive/${kind === 'spell' ? 'spells' : 'minions'}` : `/library/${kind === 'spell' ? 'spells' : 'minions'}`;
   const rounds = detail?.rounds || [];
-  const historyRows = history?.history || [];
   const mainImpact = kind === 'spell' ? spellStat?.impact : detail?.impact;
   const mainAverage = kind === 'spell' ? spellStat?.average_placement : detail?.avg_placement_with;
   const mainPopularity = kind === 'spell' ? spellStat?.total_played : detail?.popularity;
   const showStats = pool === 'current';
   const heroImage = detailCardImage(card) || '/arena-logo-icon.webp?v=mana-swirl-20260624';
+  const currentCardName = cardRuName(card);
 
   return (
     <div className="space-y-6 text-[#26374f]">
@@ -817,13 +979,13 @@ function DetailPage({ kind, pool, dbfId, navigatePath }: { kind: LibraryKind; po
       <section className="overflow-hidden rounded-lg border border-[#cbd9ed] bg-[#f8fbff] shadow-[0_16px_38px_rgba(68,88,122,0.14)]">
         <div className="grid gap-6 p-4 sm:p-6 lg:grid-cols-[320px_1fr]">
           <div className="relative mx-auto w-full max-w-xs">
-            <img src={heroImage} alt={card.name.ru} className="w-full drop-shadow-[0_22px_30px_rgba(21,31,47,0.22)]" onError={fallbackBrokenHeroImage} />
+            <img src={heroImage} alt={currentCardName} className="w-full drop-shadow-[0_22px_30px_rgba(21,31,47,0.22)]" data-fallbacks={fallbackCardImages(card, heroImage, true).join('|') || undefined} onError={fallbackBrokenHeroImage} />
           </div>
           <div className="space-y-5">
             <div>
               <p className="font-hs text-xs uppercase tracking-[0.18em] text-[#8a651f]">{kind === 'minion' ? 'Существо' : 'Заклинание'} · {pool === 'archive' ? 'Архив' : 'Активный пул'}</p>
-              <h1 className="mt-2 font-hs text-4xl text-[#23314a] sm:text-5xl">{card.name.ru}</h1>
-              <p className="mt-1 text-lg text-[#657893]">{card.name.en}</p>
+              <h1 className="mt-2 font-hs text-4xl text-[#23314a] sm:text-5xl">{currentCardName}</h1>
+              <p className="mt-1 text-lg text-[#657893]">{cardEnName(card)}</p>
             </div>
 
             <div className="flex flex-wrap gap-2">
@@ -899,16 +1061,6 @@ function DetailPage({ kind, pool, dbfId, navigatePath }: { kind: LibraryKind; po
         </section>
       )}
 
-      {kind === 'minion' && showStats && historyRows.length > 1 && (
-        <section className="rounded-lg border border-[#cbd9ed] bg-[#f8fbff] p-4 shadow-sm sm:p-5">
-          <h2 className="mb-4 font-hs text-2xl text-[#26374f]">История меты</h2>
-          <div className="grid gap-4 lg:grid-cols-2">
-            <ChartPanel title="Impact по обновлениям"><MiniChart points={historyRows.map(row => ({ x: row.fetched_at, y: Number(row.impact) }))} color="#b58a2d" /></ChartPanel>
-            <ChartPanel title="Популярность"><MiniChart points={historyRows.map(row => ({ x: row.fetched_at, y: Number(row.popularity) }))} color="#8a5fb8" unit="%" /></ChartPanel>
-          </div>
-        </section>
-      )}
-
       {kind === 'spell' && showStats && (
         <section className="rounded-lg border border-[#cbd9ed] bg-[#f8fbff] p-4 shadow-sm sm:p-5">
           <h2 className="mb-4 font-hs text-2xl text-[#26374f]">Статистика Firestone</h2>
@@ -960,8 +1112,8 @@ function DetailPage({ kind, pool, dbfId, navigatePath }: { kind: LibraryKind; po
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
             {similar.map(item => (
               <a key={item.dbf} href={cardPath(item, 'current')} onClick={(event) => { event.preventDefault(); navigatePath(cardPath(item, 'current')); }} className="rounded-md p-2 text-center transition-transform hover:-translate-y-1" style={{ textDecoration: 'none' }}>
-                <img src={primaryCardImage(item) || '/arena-logo-icon.webp?v=mana-swirl-20260624'} alt={item.name.ru} className="mx-auto h-40 object-contain drop-shadow-[0_12px_16px_rgba(21,31,47,0.18)]" loading="lazy" onError={hideBrokenImage} />
-                <p className="mt-2 line-clamp-2 font-hs text-sm text-[#26374f]">{item.name.ru}</p>
+                <img src={primaryCardImage(item) || '/arena-logo-icon.webp?v=mana-swirl-20260624'} alt={cardRuName(item)} className="mx-auto h-40 object-contain drop-shadow-[0_12px_16px_rgba(21,31,47,0.18)]" loading="lazy" onError={hideBrokenImage} />
+                <p className="mt-2 line-clamp-2 font-hs text-sm text-[#26374f]">{cardRuName(item)}</p>
               </a>
             ))}
           </div>
