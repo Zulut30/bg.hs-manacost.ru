@@ -19,6 +19,13 @@ interface LibraryCard {
   mechanics: Array<{ slug: string; name_ru: string }>;
   text_ru: string;
   images: { card?: string | null; golden?: string | null; art?: string | null; framed?: string | null };
+  asset_status?: {
+    base_card_id?: string;
+    local_card?: boolean;
+    local_framed?: boolean;
+    local_golden?: boolean;
+    local_art?: boolean;
+  };
   updated_at?: string;
 }
 
@@ -261,10 +268,42 @@ function fallbackCardImages(card: LibraryCard, current: string, includeArt = fal
 }
 
 function goldenCardImage(card: LibraryCard): string | null {
-  const id = baseCardId(card.card_id || '');
-  const localGolden = id ? localDbImageUrl(id, 'golden') : null;
-  const golden = properImage(card.images?.golden) || localGolden;
+  const golden = properImage(card.images?.golden);
   return golden && golden !== primaryCardImage(card) ? golden : null;
+}
+
+function hasReliableGolden(card: LibraryCard): boolean {
+  return Boolean(card.asset_status?.local_golden || properImage(card.images?.golden));
+}
+
+function isCompanionOrBuddy(card: LibraryCard): boolean {
+  const cardId = card.card_id || '';
+  const text = cleanSearch([cardId, card.name?.ru, card.name?.en, card.text_ru].filter(Boolean).join(' '));
+  return /buddy|companion|компаньон|напарник|tb_baconshop_hero|_hero_.*buddy|hero_.*buddy/.test(text);
+}
+
+function isGeneratedArchiveToken(card: LibraryCard): boolean {
+  const cardId = card.card_id || '';
+  const text = cleanSearch([cardId, card.name?.ru, card.name?.en].filter(Boolean).join(' '));
+  return (
+    isLikelyGoldenCardId(cardId) ||
+    /(^|_)magicitem_/i.test(cardId) ||
+    /^TB_BaconUps_/i.test(cardId) ||
+    /_HERO_/i.test(cardId) ||
+    /(^|_)HERO_/i.test(cardId) ||
+    /(^|_)Bacon(BloodGem|Refresh|Pass|Tooltip)(_|$)/i.test(cardId) ||
+    /\bbacon blood gem\b|\bbacon pass tooltip\b|\bbacon refresh\b|кровавые самоцветы|передача карт|обновление таверны/.test(text) ||
+    /(?:^|_)BG[^_]*_[A-Z0-9]+t\d*$/i.test(cardId) ||
+    /(?:^|_)BGS?_[A-Z0-9]+t\d*$/i.test(cardId) ||
+    /(?:^|_)TB_[A-Za-z0-9]+_[A-Za-z0-9]+t\d*$/i.test(cardId)
+  );
+}
+
+function isArchiveDisplayCard(card: LibraryCard, kind: LibraryKind, pool: PoolMode): boolean {
+  if (pool !== 'archive' || kind !== 'minion') return true;
+  if (isCompanionOrBuddy(card)) return false;
+  if (isGeneratedArchiveToken(card)) return false;
+  return hasReliableGolden(card);
 }
 
 function hideBrokenTileImage(event: React.SyntheticEvent<HTMLImageElement>): void {
@@ -397,6 +436,10 @@ function searchText(card: LibraryCard): string {
     card.creature_type?.slug,
     ...(card.mechanics || []).flatMap(mechanic => [mechanic.slug, mechanic.name_ru]),
   ].filter(Boolean).join(' '));
+}
+
+function containsSearchText(value: string, needle: string): boolean {
+  return value.includes(needle);
 }
 
 function cardMatchesStrategy(card: LibraryCard, strategy: StrategyEntry): boolean {
@@ -627,6 +670,12 @@ function LibraryListPage({ kind, pool, navigatePath }: { kind: LibraryKind; pool
 
   const imageReadyCards = useMemo(() => cards.filter(card => primaryCardImage(card)), [cards]);
   const hiddenWithoutImage = Math.max(0, cards.length - imageReadyCards.length);
+  const hiddenArchiveMinions = useMemo(
+    () => pool === 'archive' && kind === 'minion'
+      ? imageReadyCards.filter(card => !isArchiveDisplayCard(card, kind, pool)).length
+      : 0,
+    [imageReadyCards, kind, pool]
+  );
 
   const creatureTypes = useMemo(() => {
     const seen = new Map<string, string>();
@@ -652,7 +701,8 @@ function LibraryListPage({ kind, pool, navigatePath }: { kind: LibraryKind; pool
     const tavernSet = new Set(tavernFilters);
     const raceSet = new Set(raceFilters);
     for (const card of imageReadyCards) {
-      if (needle && searchText(card).indexOf(needle) === -1) continue;
+      if (!isArchiveDisplayCard(card, kind, pool)) continue;
+      if (needle && !containsSearchText(searchText(card), needle)) continue;
       if (!includeDuos && card.duos_only) continue;
       if (tavernSet.size > 0 && !tavernSet.has(String(card.tavern_tier || ''))) continue;
       if (kind === 'minion' && raceSet.size > 0 && !raceSet.has(card.creature_type?.slug || '')) continue;
@@ -660,7 +710,7 @@ function LibraryListPage({ kind, pool, navigatePath }: { kind: LibraryKind; pool
       rows.push(card);
     }
     return rows.sort((a, b) => Number(a.tavern_tier || 99) - Number(b.tavern_tier || 99) || cardRuName(a).localeCompare(cardRuName(b), 'ru'));
-  }, [imageReadyCards, includeDuos, kind, mechanic, query, raceFilters, tavernFilters]);
+  }, [imageReadyCards, includeDuos, kind, mechanic, pool, query, raceFilters, tavernFilters]);
 
   const archivePageCount = Math.max(1, Math.ceil(filtered.length / ARCHIVE_PAGE_SIZE));
   const normalizedArchivePage = Math.min(archivePage, archivePageCount);
@@ -810,6 +860,7 @@ function LibraryListPage({ kind, pool, navigatePath }: { kind: LibraryKind; pool
             <p className="text-sm text-[#657893]">
               Показано {pool === 'archive' ? visible.length : Math.min(visibleCount, filtered.length)} из {filtered.length}. Всего загружено {cards.length}.
               {hiddenWithoutImage > 0 && ` Без изображения скрыто: ${hiddenWithoutImage}.`}
+              {hiddenArchiveMinions > 0 && ` Компаньоны, токены, повторы и карты без golden скрыты: ${hiddenArchiveMinions}.`}
             </p>
           </div>
           {loading && <span className="font-hs text-[#8a651f]">Загружаю...</span>}

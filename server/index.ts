@@ -1798,6 +1798,8 @@ const DATASET_API_ORIGIN = 'https://api.hs-manacost.ru';
 const DATASET_API_BASE = `${DATASET_API_ORIGIN}/datasets`;
 const BG_HEROES_API_URL = `${DATASET_API_ORIGIN}/demo/view/hsreplay_battlegrounds_heroes`;
 const BG_LIBRARY_API_BASE = 'https://db.kolodahs.ru/api/v1';
+const BG_CARD_ASSET_PUBLIC_BASE = 'https://db.kolodahs.ru/uploads';
+const BG_CARD_ASSET_ROOT = '/var/www/koloda/data/www/db.kolodahs.ru/uploads';
 const BG_FIRESTONE_SPELLS_API_URL = `${DATASET_API_ORIGIN}/demo/view/firestone_battlegrounds_spells`;
 const HEARTHSTONEJSON_RU_CARDS_URL = 'https://api.hearthstonejson.com/v1/latest/ruRU/cards.collectible.json';
 const EXTERNAL_DATASET_CACHE_MS = DATASET_MEMORY_CACHE_MS;
@@ -3337,6 +3339,64 @@ app.get('/api/bg/heroes', async (req, res) => {
   }
 });
 
+function bgBaseCardId(cardId: string): string {
+  return String(cardId || '').replace(/_Gt$/, 't').replace(/_G$/, '');
+}
+
+function bgAssetUrl(cardId: string, folder: 'cards' | 'framed' | 'golden' | 'art'): string | null {
+  if (!cardId) return null;
+  const ext = folder === 'art' ? 'jpg' : 'png';
+  const filePath = join(BG_CARD_ASSET_ROOT, folder, `${cardId}.${ext}`);
+  if (!existsSync(filePath)) return null;
+  const version = encodeURIComponent(new Date(statSync(filePath).mtime).toISOString().replace('T', ' ').slice(0, 19));
+  return `${BG_CARD_ASSET_PUBLIC_BASE}/${folder}/${encodeURIComponent(cardId)}.${ext}?v=${version}`;
+}
+
+function bgLibraryAssetIds(rawId: string, baseId: string): string[] {
+  const ids: string[] = [];
+  if (rawId) ids.push(rawId);
+  if (baseId && baseId !== rawId) ids.push(baseId);
+  return ids;
+}
+
+function bgFirstAssetUrl(ids: string[], folder: 'cards' | 'framed' | 'golden' | 'art'): string | null {
+  for (const id of ids) {
+    const url = bgAssetUrl(id, folder);
+    if (url) return url;
+  }
+  return null;
+}
+
+function enrichBgLibraryCard(card: any): any {
+  if (!card || typeof card !== 'object') return card;
+  const rawId = String(card.card_id || '');
+  const baseId = bgBaseCardId(rawId);
+  const ids = bgLibraryAssetIds(rawId, baseId);
+  const localCard = bgFirstAssetUrl(ids, 'cards');
+  const localFramed = bgFirstAssetUrl(ids, 'framed');
+  const localGolden = bgFirstAssetUrl(ids, 'golden');
+  const localArt = bgFirstAssetUrl(ids, 'art');
+
+  return {
+    ...card,
+    images: {
+      ...(card.images || {}),
+      ...(localCard ? { card: localCard } : {}),
+      ...(localFramed ? { framed: localFramed } : {}),
+      ...(localGolden ? { golden: localGolden } : {}),
+      ...(localArt ? { art: localArt } : {}),
+    },
+    asset_status: {
+      ...(card.asset_status || {}),
+      base_card_id: baseId || rawId,
+      local_card: Boolean(localCard),
+      local_framed: Boolean(localFramed),
+      local_golden: Boolean(localGolden),
+      local_art: Boolean(localArt),
+    },
+  };
+}
+
 app.get('/api/bg/library/meta', async (req, res) => {
   try {
     const payload = await fetchJsonWithTimeout(`${BG_LIBRARY_API_BASE}/meta`, {
@@ -3374,7 +3434,7 @@ app.get('/api/bg/library/cards', async (req, res) => {
         headers: { Accept: 'application/json' },
       }, 20_000);
       const cards = Array.isArray(payload?.data) ? payload.data : [];
-      allCards.push(...cards);
+      allCards.push(...cards.map(enrichBgLibraryCard));
       total = Number(payload?.pagination?.total || allCards.length);
       totalPages = Math.min(30, Number(payload?.pagination?.total_pages || page));
       page += 1;
@@ -3407,7 +3467,7 @@ app.get('/api/bg/library/cards/by-dbf/:dbfId', async (req, res) => {
     const payload = await fetchJsonWithTimeout(`${BG_LIBRARY_API_BASE}/cards/by-dbf/${dbfId}`, {
       headers: { Accept: 'application/json' },
     }, 20_000);
-    const card = payload?.data || payload;
+    const card = enrichBgLibraryCard(payload?.data || payload);
     const etag = `"bg-library-card-${createHash('sha1').update(JSON.stringify(card)).digest('hex').slice(0, 16)}"`;
     return sendJsonCached(req, res, card, etag, 'public, max-age=300, stale-while-revalidate=900');
   } catch (err: any) {
