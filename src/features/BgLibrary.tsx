@@ -189,6 +189,94 @@ function cardPath(card: LibraryCard, pool: PoolMode): string {
   return `${prefix}/${cardSlug(card)}`;
 }
 
+function primaryCardImage(card: LibraryCard): string | null {
+  return card.images?.card || card.images?.framed || card.images?.golden || null;
+}
+
+function detailCardImage(card: LibraryCard): string | null {
+  return primaryCardImage(card) || card.images?.art || null;
+}
+
+function fallbackCardImage(card: LibraryCard, current: string): string | null {
+  return [card.images?.framed, card.images?.golden, card.images?.card, card.images?.art]
+    .find(candidate => Boolean(candidate) && candidate !== current) || null;
+}
+
+function goldenCardImage(card: LibraryCard): string | null {
+  return card.images?.golden && card.images.golden !== primaryCardImage(card) ? card.images.golden : null;
+}
+
+function hideBrokenTileImage(event: React.SyntheticEvent<HTMLImageElement>): void {
+  const image = event.currentTarget;
+  const fallback = image.dataset.fallback;
+  if (fallback && image.dataset.fallbackTried !== 'true') {
+    image.dataset.fallbackTried = 'true';
+    image.src = fallback;
+    return;
+  }
+  const tile = image.closest('[data-library-card-tile]') as HTMLElement | null;
+  if (tile) tile.style.display = 'none';
+}
+
+function hideBrokenImage(event: React.SyntheticEvent<HTMLImageElement>): void {
+  event.currentTarget.style.display = 'none';
+}
+
+function fallbackBrokenHeroImage(event: React.SyntheticEvent<HTMLImageElement>): void {
+  const image = event.currentTarget;
+  if (image.dataset.fallbackTried !== 'true') {
+    image.dataset.fallbackTried = 'true';
+    image.src = '/arena-logo-icon.webp?v=mana-swirl-20260624';
+    return;
+  }
+  image.style.display = 'none';
+}
+
+function cardFamilyKey(card: LibraryCard): string {
+  return [
+    card.card_type.slug,
+    cleanSearch(card.name?.ru || card.name?.en || card.card_id),
+    cleanSearch(card.name?.en || ''),
+    card.tavern_tier || 'none',
+    card.creature_type?.slug || 'none',
+  ].join('|');
+}
+
+function cardQualityScore(card: LibraryCard): number {
+  const cardId = cleanSearch(card.card_id || '');
+  const isLikelyGolden = cardId.includes('_g') || cardId.includes('golden') || /_g$/.test(cardId);
+  const statTotal = Number(card.attack || 0) + Number(card.health || 0);
+  return (
+    (card.in_pool ? 1000 : 0) +
+    (primaryCardImage(card) ? 300 : 0) +
+    (card.images?.card ? 60 : 0) +
+    (goldenCardImage(card) ? 30 : 0) +
+    (isLikelyGolden ? 0 : 25) -
+    Math.max(0, statTotal) * 0.02
+  );
+}
+
+function dedupeLibraryCards(cards: LibraryCard[]): LibraryCard[] {
+  const byFamily = new Map<string, LibraryCard>();
+  cards.forEach(card => {
+    if (!card?.dbf) return;
+    const key = cardFamilyKey(card);
+    const current = byFamily.get(key);
+    if (!current || cardQualityScore(card) > cardQualityScore(current)) {
+      byFamily.set(key, card);
+    }
+  });
+  return Array.from(byFamily.values());
+}
+
+async function fetchJsonOrNull<T>(url: string): Promise<T | null> {
+  try {
+    return await fetchJson<T>(url);
+  } catch {
+    return null;
+  }
+}
+
 function setLibraryMeta(title: string, description: string, slug: string, image?: string | null): void {
   document.title = title;
   const metaDescription = document.querySelector<HTMLMetaElement>('meta[name="description"]');
@@ -249,18 +337,15 @@ function cardMatchesStrategy(card: LibraryCard, strategy: StrategyEntry): boolea
 
 function metricTone(value: unknown): string {
   const numberValue = Number(value);
-  if (!Number.isFinite(numberValue)) return 'text-[#d6c4a3]';
-  if (numberValue > 0.4) return 'text-[#9ee08f]';
-  if (numberValue > 0) return 'text-[#f1d47b]';
-  return 'text-[#f09a9a]';
+  if (!Number.isFinite(numberValue)) return 'text-[#826b49]';
+  if (numberValue > 0.4) return 'text-[#2f7a3e]';
+  if (numberValue > 0) return 'text-[#8a651f]';
+  return 'text-[#a33a3a]';
 }
 
 function useLibraryData(kind: LibraryKind, pool: PoolMode) {
   const [cards, setCards] = useState<LibraryCard[]>([]);
   const [meta, setMeta] = useState<LibraryMeta>({});
-  const [minionStats, setMinionStats] = useState<MinionStat[]>([]);
-  const [spellStats, setSpellStats] = useState<FirestoneSpellStat[]>([]);
-  const [strategies, setStrategies] = useState<StrategyEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -272,27 +357,13 @@ function useLibraryData(kind: LibraryKind, pool: PoolMode) {
     const requests: Array<Promise<unknown>> = [
       fetchJson<LibraryMeta>('/api/bg/library/meta'),
       fetchJson<{ data: LibraryCard[] }>(`/api/bg/library/cards?card_type=${kind}&in_pool=${inPool}`),
-      fetch('/bg-legacy/comps-data.js', { cache: 'force-cache' }).then(response => response.ok ? response.text() : ''),
     ];
-    if (kind === 'minion' && pool === 'current') requests.push(fetchJson<{ minions: MinionStat[] }>('/api/bg/library/minion-stats'));
-    if (kind === 'spell' && pool === 'current') requests.push(fetchJson<any>('/api/bg/library/spell-stats'));
 
     Promise.all(requests)
       .then(results => {
         if (!alive) return;
         setMeta(results[0] as LibraryMeta);
-        setCards(((results[1] as { data?: LibraryCard[] }).data || []).filter(card => card?.dbf));
-        setStrategies(parseStrategies(String(results[2] || '')));
-        if (kind === 'minion' && pool === 'current') {
-          setMinionStats(((results[3] as { minions?: MinionStat[] })?.minions || []));
-          setSpellStats([]);
-        } else if (kind === 'spell' && pool === 'current') {
-          setSpellStats(flattenSpellStats(results[3]));
-          setMinionStats([]);
-        } else {
-          setMinionStats([]);
-          setSpellStats([]);
-        }
+        setCards(dedupeLibraryCards(((results[1] as { data?: LibraryCard[] }).data || []).filter(card => card?.dbf)));
       })
       .catch(errorValue => {
         if (alive) setError(errorValue?.message || 'Не удалось загрузить библиотеку');
@@ -304,22 +375,22 @@ function useLibraryData(kind: LibraryKind, pool: PoolMode) {
     return () => { alive = false; };
   }, [kind, pool]);
 
-  return { cards, meta, minionStats, spellStats, strategies, loading, error };
+  return { cards, meta, loading, error };
 }
 
 function MetricCard({ label, value, caption, tone }: { label: string; value: string; caption?: string; tone?: string }) {
   return (
-    <div className="rounded-md border border-[#2a3a55] bg-[#0d1728] px-4 py-3 shadow-inner">
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-[#8fa4c0]">{label}</p>
-      <p className={`mt-1 font-hs text-2xl ${tone || 'text-[#f4d47d]'}`}>{value}</p>
-      {caption && <p className="mt-1 text-xs text-[#9fb0c8]">{caption}</p>}
+    <div className="rounded-md border border-[#cbd9ed] bg-[#f8fbff] px-4 py-3 shadow-sm">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-[#60718a]">{label}</p>
+      <p className={`mt-1 font-hs text-2xl ${tone || 'text-[#7c5b24]'}`}>{value}</p>
+      {caption && <p className="mt-1 text-xs text-[#657893]">{caption}</p>}
     </div>
   );
 }
 
 function MiniChart({ points, color = '#f1d47b', unit = '', invert = false }: { points: Array<{ x: string | number; y: number }>; color?: string; unit?: string; invert?: boolean }) {
   const clean = points.filter(point => Number.isFinite(Number(point.y)));
-  if (clean.length < 2) return <div className="flex h-44 items-center justify-center text-sm text-[#8fa4c0]">Недостаточно точек для графика</div>;
+  if (clean.length < 2) return <div className="flex h-44 items-center justify-center text-sm text-[#657893]">Недостаточно точек для графика</div>;
   const width = 560;
   const height = 190;
   const padX = 34;
@@ -337,19 +408,19 @@ function MiniChart({ points, color = '#f1d47b', unit = '', invert = false }: { p
   const path = clean.map((point, index) => `${index === 0 ? 'M' : 'L'}${xFor(index).toFixed(1)} ${yFor(Number(point.y)).toFixed(1)}`).join(' ');
   const last = clean[clean.length - 1];
   return (
-    <div className="overflow-hidden rounded-md border border-[#22324b] bg-[#080f1d]">
+    <div className="overflow-hidden rounded-md border border-[#d3deef] bg-[#fbfdff]">
       <svg viewBox={`0 0 ${width} ${height}`} role="img" className="h-48 w-full">
         {[0, 1, 2, 3].map(line => {
           const y = padY + (line / 3) * (height - padY * 2);
-          return <line key={line} x1={padX} x2={width - padX} y1={y} y2={y} stroke="rgba(217,227,242,0.12)" />;
+          return <line key={line} x1={padX} x2={width - padX} y1={y} y2={y} stroke="rgba(89,103,126,0.18)" />;
         })}
         <path d={path} fill="none" stroke={color} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
         {clean.map((point, index) => (
-          <circle key={`${point.x}-${index}`} cx={xFor(index)} cy={yFor(Number(point.y))} r="4" fill={color} stroke="#080f1d" strokeWidth="2" />
+          <circle key={`${point.x}-${index}`} cx={xFor(index)} cy={yFor(Number(point.y))} r="4" fill={color} stroke="#fbfdff" strokeWidth="2" />
         ))}
-        <text x={padX} y={height - 6} fill="#8fa4c0" fontSize="13">{String(clean[0].x).slice(0, 10)}</text>
-        <text x={width - padX} y={height - 6} textAnchor="end" fill="#8fa4c0" fontSize="13">{String(last.x).slice(0, 10)}</text>
-        <text x={width - padX} y={padY - 7} textAnchor="end" fill="#d9e3f2" fontSize="14">{formatDecimal(last.y, unit === '%' ? 1 : 2)}{unit}</text>
+        <text x={padX} y={height - 6} fill="#657893" fontSize="13">{String(clean[0].x).slice(0, 10)}</text>
+        <text x={width - padX} y={height - 6} textAnchor="end" fill="#657893" fontSize="13">{String(last.x).slice(0, 10)}</text>
+        <text x={width - padX} y={padY - 7} textAnchor="end" fill="#26374f" fontSize="14">{formatDecimal(last.y, unit === '%' ? 1 : 2)}{unit}</text>
       </svg>
     </div>
   );
@@ -364,7 +435,7 @@ function FilterChip({ active, children, onClick, title }: { key?: React.Key; act
       className={`flex min-h-10 items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold transition-colors ${
         active
           ? 'border-[#e4c675] bg-[#e4c675] text-[#101827] shadow-sm'
-          : 'border-[#293a55] bg-[#101b2e] text-[#d9e3f2] hover:border-[#e4c675] hover:text-[#fff3c4]'
+          : 'border-[#cbd9ed] bg-[#ffffff] text-[#34445c] hover:border-[#d3af55] hover:text-[#6d4f1c]'
       }`}
     >
       {children}
@@ -375,72 +446,61 @@ function FilterChip({ active, children, onClick, title }: { key?: React.Key; act
 function LibraryCardTile({
   card,
   pool,
-  minionStat,
-  spellStat,
-  strategyCount,
   navigatePath,
 }: {
   key?: React.Key;
   card: LibraryCard;
   pool: PoolMode;
-  minionStat?: MinionStat;
-  spellStat?: FirestoneSpellStat;
-  strategyCount: number;
   navigatePath: (path: string) => void;
 }) {
   const href = cardPath(card, pool);
-  const average = card.card_type.slug === 'spell' ? spellStat?.average_placement : minionStat?.avg_placement_with;
-  const impact = card.card_type.slug === 'spell' ? spellStat?.impact : minionStat?.impact;
-  const popularity = card.card_type.slug === 'spell' ? spellStat?.total_played : minionStat?.popularity;
+  const image = primaryCardImage(card) || '/arena-logo-icon.webp?v=mana-swirl-20260624';
+  const fallback = fallbackCardImage(card, image);
+  const golden = goldenCardImage(card);
   return (
     <a
       href={href}
       onClick={(event) => { event.preventDefault(); navigatePath(href); }}
-      className="group flex flex-col rounded-lg border border-[#23344e] bg-[#0b1424] p-2 text-left shadow-[0_10px_24px_rgba(0,0,0,0.26)] transition-transform hover:-translate-y-1 hover:border-[#e4c675]"
+      data-library-card-tile
+      className="group relative block overflow-visible rounded-md p-1 text-center transition-transform hover:-translate-y-1"
       style={{ textDecoration: 'none' }}
     >
-      <div className="relative aspect-[0.72] overflow-hidden rounded-md bg-[#050a13]">
+      <div className="relative mx-auto aspect-[0.72] w-full max-w-[240px]">
         <img
-          src={card.images?.card || card.images?.framed || spellStat?.image_url || '/arena-logo-icon.webp?v=mana-swirl-20260624'}
+          src={image}
           alt={card.name.ru}
-          className="h-full w-full object-contain transition-transform duration-300 group-hover:scale-[1.03]"
+          className="relative z-10 h-full w-full object-contain drop-shadow-[0_16px_20px_rgba(21,31,47,0.22)] transition duration-200 group-hover:scale-[1.03] sm:group-hover:-translate-x-5"
           loading="lazy"
+          data-fallback={fallback || undefined}
+          onError={hideBrokenTileImage}
         />
-        {card.tavern_tier && (
-          <img src={tavernIcon(card.tavern_tier)} alt={`Таверна ${card.tavern_tier}`} className="absolute left-1 top-1 h-9 w-9 drop-shadow-lg" loading="lazy" />
+        {golden && (
+          <img
+            src={golden}
+            alt={`${card.name.ru}, золотая версия`}
+            className="pointer-events-none absolute inset-0 z-20 h-full w-full translate-x-2 object-contain opacity-0 drop-shadow-[0_20px_26px_rgba(21,31,47,0.28)] transition duration-200 group-hover:translate-x-8 group-hover:opacity-100 sm:group-hover:translate-x-12"
+            loading="lazy"
+            onError={hideBrokenImage}
+          />
         )}
       </div>
-      <div className="mt-2 min-h-[4.8rem]">
-        <h3 className="line-clamp-2 font-hs text-base leading-tight text-[#fff3c4]">{card.name.ru}</h3>
-        <p className="mt-1 line-clamp-1 text-xs text-[#8fa4c0]">{card.name.en}</p>
-      </div>
-      <div className="mt-auto grid grid-cols-2 gap-1.5 text-xs">
-        <span className="rounded bg-[#101d31] px-2 py-1 text-[#c8d5e8]">Место {formatDecimal(average, 2)}</span>
-        <span className={`rounded bg-[#101d31] px-2 py-1 ${metricTone(impact)}`}>Impact {formatDecimal(impact, 2)}</span>
-        <span className="rounded bg-[#101d31] px-2 py-1 text-[#c8d5e8]">{card.creature_type?.name_ru || 'Заклинание'}</span>
-        <span className="rounded bg-[#101d31] px-2 py-1 text-[#c8d5e8]">{card.card_type.slug === 'spell' ? formatCount(popularity) : `${formatDecimal(popularity, 1)}%`}</span>
-      </div>
-      {strategyCount > 0 && (
-        <div className="mt-2 rounded-md border border-[#37527a] bg-[#14223a] px-2 py-1 text-xs font-semibold text-[#f1d47b]">
-          В стратегиях: {strategyCount}
-        </div>
-      )}
+      <span className="sr-only">Открыть страницу карты {card.name.ru}</span>
     </a>
   );
 }
 
 function ChartPanel({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-md border border-[#263955] bg-[#0d1728] p-4">
-      <h3 className="font-hs text-xl text-[#fff3c4]">{title}</h3>
-      {subtitle && <p className="mb-3 mt-1 text-sm text-[#9fb0c8]">{subtitle}</p>}
+    <div className="rounded-md border border-[#cbd9ed] bg-[#f8fbff] p-4">
+      <h3 className="font-hs text-xl text-[#26374f]">{title}</h3>
+      {subtitle && <p className="mb-3 mt-1 text-sm text-[#657893]">{subtitle}</p>}
       {children}
     </div>
   );
 }
 
 function LibraryListPage({ kind, pool, navigatePath }: { kind: LibraryKind; pool: PoolMode; navigatePath: (path: string) => void }) {
-  const { cards, meta, minionStats, spellStats, strategies, loading, error } = useLibraryData(kind, pool);
+  const { cards, meta, loading, error } = useLibraryData(kind, pool);
   const [query, setQuery] = useState('');
   const [tavern, setTavern] = useState('ALL');
   const [race, setRace] = useState('ALL');
@@ -464,16 +524,8 @@ function LibraryListPage({ kind, pool, navigatePath }: { kind: LibraryKind; pool
     setVisibleCount(INITIAL_VISIBLE_CARDS);
   }, [query, tavern, race, mechanic, kind, pool]);
 
-  const minionStatByDbf = useMemo(() => new Map(minionStats.map(item => [Number(item.dbf_id), item])), [minionStats]);
-  const spellStatByDbf = useMemo(() => new Map(spellStats.map(item => [Number(item.dbfId), item])), [spellStats]);
-  const strategyCountByDbf = useMemo(() => {
-    const map = new Map<number, number>();
-    cards.forEach(card => {
-      const count = strategies.filter(strategy => cardMatchesStrategy(card, strategy)).length;
-      if (count) map.set(card.dbf, count);
-    });
-    return map;
-  }, [cards, strategies]);
+  const imageReadyCards = useMemo(() => cards.filter(card => primaryCardImage(card)), [cards]);
+  const hiddenWithoutImage = Math.max(0, cards.length - imageReadyCards.length);
 
   const creatureTypes = useMemo(() => {
     const seen = new Map<string, string>();
@@ -495,13 +547,16 @@ function LibraryListPage({ kind, pool, navigatePath }: { kind: LibraryKind; pool
 
   const filtered = useMemo(() => {
     const needle = cleanSearch(query);
-    return cards
-      .filter(card => !needle || searchText(card).includes(needle))
-      .filter(card => tavern === 'ALL' || String(card.tavern_tier || '') === tavern)
-      .filter(card => kind !== 'minion' || race === 'ALL' || card.creature_type?.slug === race)
-      .filter(card => mechanic === 'ALL' || (card.mechanics || []).some(item => item.slug === mechanic))
-      .sort((a, b) => Number(a.tavern_tier || 99) - Number(b.tavern_tier || 99) || a.name.ru.localeCompare(b.name.ru, 'ru'));
-  }, [cards, kind, mechanic, query, race, tavern]);
+    const rows: LibraryCard[] = [];
+    for (const card of imageReadyCards) {
+      if (needle && searchText(card).indexOf(needle) === -1) continue;
+      if (tavern !== 'ALL' && String(card.tavern_tier || '') !== tavern) continue;
+      if (kind === 'minion' && race !== 'ALL' && card.creature_type?.slug !== race) continue;
+      if (mechanic !== 'ALL' && !(card.mechanics || []).some(item => item.slug === mechanic)) continue;
+      rows.push(card);
+    }
+    return rows.sort((a, b) => Number(a.tavern_tier || 99) - Number(b.tavern_tier || 99) || a.name.ru.localeCompare(b.name.ru, 'ru'));
+  }, [imageReadyCards, kind, mechanic, query, race, tavern]);
 
   const visible = filtered.slice(0, visibleCount);
   const grouped = useMemo(() => {
@@ -519,50 +574,50 @@ function LibraryListPage({ kind, pool, navigatePath }: { kind: LibraryKind; pool
   const poolTitle = pool === 'archive' ? 'Архив' : 'Актуальный пул';
 
   return (
-    <div className="space-y-6 text-[#d9e3f2]">
-      <section className="rounded-lg border border-[#263955] bg-[#07101f] p-4 shadow-[0_18px_48px_rgba(0,0,0,0.28)] sm:p-6">
+    <div className="space-y-6 text-[#26374f]">
+      <section className="rounded-lg border border-[#cbd9ed] bg-[#f8fbff] p-4 shadow-[0_16px_38px_rgba(68,88,122,0.14)] sm:p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <p className="font-hs text-xs uppercase tracking-[0.18em] text-[#e4c675]">Battlegrounds</p>
-            <h1 className="mt-2 font-hs text-3xl text-[#fff3c4] sm:text-4xl">{pool === 'archive' ? 'Архив карт' : 'Библиотека'}</h1>
-            <p className="mt-2 max-w-3xl text-sm text-[#9fb0c8]">
+            <p className="font-hs text-xs uppercase tracking-[0.18em] text-[#8a651f]">Battlegrounds</p>
+            <h1 className="mt-2 font-hs text-3xl text-[#23314a] sm:text-4xl">{pool === 'archive' ? 'Архив карт' : 'Библиотека'}</h1>
+            <p className="mt-2 max-w-3xl text-sm text-[#5e708a]">
               {pool === 'archive'
-                ? 'Существа и заклинания, которые уже были в Полях сражений, но сейчас не находятся в активном пуле.'
+                ? 'Существа и заклинания, которые уже были в Полях сражений, но сейчас не находятся в активном пуле. В архиве показываем только визуальную карточку без статистики.'
                 : 'Актуальные существа и заклинания активного пула: фильтры по таверне, типу, механикам и переход на подробную статистику.'}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <a href="/library" onClick={(e) => { e.preventDefault(); navigatePath('/library'); }} className={`rounded-md border px-4 py-2 font-hs text-sm ${pool === 'current' ? 'border-[#e4c675] bg-[#e4c675] text-[#101827]' : 'border-[#304563] bg-[#101b2e] text-[#d9e3f2]'}`} style={{ textDecoration: 'none' }}>
+            <a href="/library" onClick={(e) => { e.preventDefault(); navigatePath('/library'); }} className={`rounded-md border px-4 py-2 font-hs text-sm ${pool === 'current' ? 'border-[#e4c675] bg-[#e4c675] text-[#101827]' : 'border-[#cbd9ed] bg-[#ffffff] text-[#33445d]'}`} style={{ textDecoration: 'none' }}>
               <BookOpen size={16} className="mr-2 inline" />В пуле
             </a>
-            <a href="/library/archive" onClick={(e) => { e.preventDefault(); navigatePath('/library/archive'); }} className={`rounded-md border px-4 py-2 font-hs text-sm ${pool === 'archive' ? 'border-[#e4c675] bg-[#e4c675] text-[#101827]' : 'border-[#304563] bg-[#101b2e] text-[#d9e3f2]'}`} style={{ textDecoration: 'none' }}>
+            <a href="/library/archive" onClick={(e) => { e.preventDefault(); navigatePath('/library/archive'); }} className={`rounded-md border px-4 py-2 font-hs text-sm ${pool === 'archive' ? 'border-[#e4c675] bg-[#e4c675] text-[#101827]' : 'border-[#cbd9ed] bg-[#ffffff] text-[#33445d]'}`} style={{ textDecoration: 'none' }}>
               <Archive size={16} className="mr-2 inline" />Архив
             </a>
           </div>
         </div>
       </section>
 
-      <section className="rounded-lg border border-[#263955] bg-[#0a1323] p-4 sm:p-5">
+      <section className="rounded-lg border border-[#cbd9ed] bg-[#f3f7fe] p-4 shadow-sm sm:p-5">
         <div className="grid gap-3 lg:grid-cols-[minmax(240px,1fr)_auto]">
           <label className="relative block">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-[#8fa4c0]" size={20} />
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-[#7b8da6]" size={20} />
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               type="search"
               placeholder="Поиск: например, Боевой клич, Мурлок, Ривендер, Banana"
-              className="h-12 w-full rounded-md border border-[#2d405d] bg-[#101b2e] pl-12 pr-4 text-base font-semibold text-[#fff3c4] outline-none transition-colors placeholder:text-[#7487a3] focus:border-[#e4c675]"
+              className="h-12 w-full rounded-md border border-[#c5d4e9] bg-[#ffffff] pl-12 pr-4 text-base font-semibold text-[#26374f] outline-none transition-colors placeholder:text-[#8b9ab0] focus:border-[#d3af55]"
             />
           </label>
           <div className="flex flex-wrap gap-2">
-            <a href={`${basePath}/minions`} onClick={(e) => { e.preventDefault(); navigatePath(`${basePath}/minions`); }} className={`rounded-md border px-4 py-3 font-hs text-sm ${kind === 'minion' ? 'border-[#e4c675] bg-[#e4c675] text-[#101827]' : 'border-[#304563] bg-[#101b2e] text-[#d9e3f2]'}`} style={{ textDecoration: 'none' }}>Существа</a>
-            <a href={`${basePath}/spells`} onClick={(e) => { e.preventDefault(); navigatePath(`${basePath}/spells`); }} className={`rounded-md border px-4 py-3 font-hs text-sm ${kind === 'spell' ? 'border-[#e4c675] bg-[#e4c675] text-[#101827]' : 'border-[#304563] bg-[#101b2e] text-[#d9e3f2]'}`} style={{ textDecoration: 'none' }}>Заклинания</a>
+            <a href={`${basePath}/minions`} onClick={(e) => { e.preventDefault(); navigatePath(`${basePath}/minions`); }} className={`rounded-md border px-4 py-3 font-hs text-sm ${kind === 'minion' ? 'border-[#e4c675] bg-[#e4c675] text-[#101827]' : 'border-[#cbd9ed] bg-[#ffffff] text-[#33445d]'}`} style={{ textDecoration: 'none' }}>Существа</a>
+            <a href={`${basePath}/spells`} onClick={(e) => { e.preventDefault(); navigatePath(`${basePath}/spells`); }} className={`rounded-md border px-4 py-3 font-hs text-sm ${kind === 'spell' ? 'border-[#e4c675] bg-[#e4c675] text-[#101827]' : 'border-[#cbd9ed] bg-[#ffffff] text-[#33445d]'}`} style={{ textDecoration: 'none' }}>Заклинания</a>
           </div>
         </div>
 
         <div className="mt-4 space-y-4">
-          <details className="rounded-md border border-[#22324b] bg-[#0d1728] p-3" open>
-            <summary className="flex cursor-pointer list-none items-center justify-between font-hs text-sm text-[#fff3c4]">
+          <details className="rounded-md border border-[#cbd9ed] bg-[#ffffff] p-3" open>
+            <summary className="flex cursor-pointer list-none items-center justify-between font-hs text-sm text-[#26374f]">
               <span className="flex items-center gap-2"><Filter size={16} />Уровень таверны</span><ChevronDown size={16} />
             </summary>
             <div className="mt-3 flex flex-wrap gap-2">
@@ -576,8 +631,8 @@ function LibraryListPage({ kind, pool, navigatePath }: { kind: LibraryKind; pool
           </details>
 
           {kind === 'minion' && (
-            <details className="rounded-md border border-[#22324b] bg-[#0d1728] p-3" open>
-              <summary className="flex cursor-pointer list-none items-center justify-between font-hs text-sm text-[#fff3c4]">
+            <details className="rounded-md border border-[#cbd9ed] bg-[#ffffff] p-3" open>
+              <summary className="flex cursor-pointer list-none items-center justify-between font-hs text-sm text-[#26374f]">
                 <span>Тип существа</span><ChevronDown size={16} />
               </summary>
               <div className="mt-3 flex flex-wrap gap-2">
@@ -591,8 +646,8 @@ function LibraryListPage({ kind, pool, navigatePath }: { kind: LibraryKind; pool
             </details>
           )}
 
-          <details className="rounded-md border border-[#22324b] bg-[#0d1728] p-3">
-            <summary className="flex cursor-pointer list-none items-center justify-between font-hs text-sm text-[#fff3c4]">
+          <details className="rounded-md border border-[#cbd9ed] bg-[#ffffff] p-3">
+            <summary className="flex cursor-pointer list-none items-center justify-between font-hs text-sm text-[#26374f]">
               <span>Механики</span><ChevronDown size={16} />
             </summary>
             <div className="mt-3 flex max-h-56 flex-wrap gap-2 overflow-auto pr-1">
@@ -605,35 +660,35 @@ function LibraryListPage({ kind, pool, navigatePath }: { kind: LibraryKind; pool
         </div>
       </section>
 
-      <section className="rounded-lg border border-[#263955] bg-[#07101f] p-4 sm:p-5">
+      <section className="overflow-visible rounded-lg border border-[#cbd9ed] bg-[#f8fbff] p-4 shadow-sm sm:p-5">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="font-hs text-xl text-[#fff3c4]">{kindTitle} · {poolTitle}</p>
-            <p className="text-sm text-[#9fb0c8]">Показано {Math.min(visibleCount, filtered.length)} из {filtered.length}. Всего загружено {cards.length}.</p>
+            <p className="font-hs text-xl text-[#26374f]">{kindTitle} · {poolTitle}</p>
+            <p className="text-sm text-[#657893]">
+              Показано {Math.min(visibleCount, filtered.length)} из {filtered.length}. Всего загружено {cards.length}.
+              {hiddenWithoutImage > 0 && ` Без изображения скрыто: ${hiddenWithoutImage}.`}
+            </p>
           </div>
-          {loading && <span className="font-hs text-[#e4c675]">Загружаю...</span>}
+          {loading && <span className="font-hs text-[#8a651f]">Загружаю...</span>}
         </div>
 
-        {error && <div className="rounded-md border border-[#7f1d1d] bg-[#2a0f16] p-4 text-[#fecaca]">{error}</div>}
-        {!loading && !error && filtered.length === 0 && <div className="rounded-md border border-[#2d405d] bg-[#0d1728] p-8 text-center text-[#9fb0c8]">По выбранным фильтрам ничего не найдено.</div>}
+        {error && <div className="rounded-md border border-[#efb4b4] bg-[#fff1f1] p-4 text-[#8f2424]">{error}</div>}
+        {!loading && !error && filtered.length === 0 && <div className="rounded-md border border-[#cbd9ed] bg-[#ffffff] p-8 text-center text-[#657893]">По выбранным фильтрам ничего не найдено.</div>}
 
         <div className="space-y-8">
           {grouped.map(([tier, items]) => (
             <div key={tier}>
               <div className="mb-4 flex items-center gap-3">
                 {tier !== 'none' && <img src={tavernIcon(tier)} alt="" className="h-10 w-10" loading="lazy" />}
-                <h2 className="font-hs text-2xl text-[#fff3c4]">{tier === 'none' ? 'Без уровня таверны' : `Таверна ${tier}`}</h2>
-                <div className="h-px flex-1 bg-[#304563]" />
+                <h2 className="font-hs text-2xl text-[#26374f]">{tier === 'none' ? 'Без уровня таверны' : `Таверна ${tier}`}</h2>
+                <div className="h-px flex-1 bg-[#cbd9ed]" />
               </div>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+              <div className="grid overflow-visible grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
                 {items.map(card => (
                   <LibraryCardTile
                     key={card.dbf}
                     card={card}
                     pool={pool}
-                    minionStat={minionStatByDbf.get(card.dbf)}
-                    spellStat={spellStatByDbf.get(card.dbf)}
-                    strategyCount={strategyCountByDbf.get(card.dbf) || 0}
                     navigatePath={navigatePath}
                   />
                 ))}
@@ -671,13 +726,15 @@ function DetailPage({ kind, pool, dbfId, navigatePath }: { kind: LibraryKind; po
     const baseRequests: Array<Promise<unknown>> = [
       fetchJson<LibraryCard>(`/api/bg/library/cards/by-dbf/${dbfId}`),
       fetch('/bg-legacy/comps-data.js', { cache: 'force-cache' }).then(response => response.ok ? response.text() : ''),
-      fetchJson<{ data: LibraryCard[] }>(`/api/bg/library/cards?card_type=${kind}&in_pool=1`),
+      pool === 'current' ? fetchJson<{ data: LibraryCard[] }>(`/api/bg/library/cards?card_type=${kind}&in_pool=1`).catch(() => ({ data: [] })) : Promise.resolve({ data: [] }),
     ];
-    if (kind === 'minion') {
-      baseRequests.push(fetchJson<MinionDetail>(`/api/bg/library/minions/${dbfId}`));
-      baseRequests.push(fetchJson<MinionHistoryPayload>(`/api/bg/library/minions/${dbfId}/history`));
+    if (kind === 'minion' && pool === 'current') {
+      baseRequests.push(fetchJsonOrNull<MinionDetail>(`/api/bg/library/minions/${dbfId}`));
+      baseRequests.push(fetchJsonOrNull<MinionHistoryPayload>(`/api/bg/library/minions/${dbfId}/history`));
+    } else if (kind === 'spell' && pool === 'current') {
+      baseRequests.push(fetchJsonOrNull<any>('/api/bg/library/spell-stats'));
     } else {
-      baseRequests.push(fetchJson<any>('/api/bg/library/spell-stats'));
+      baseRequests.push(Promise.resolve(null));
     }
 
     Promise.all(baseRequests)
@@ -686,19 +743,27 @@ function DetailPage({ kind, pool, dbfId, navigatePath }: { kind: LibraryKind; po
         const loadedCard = results[0] as LibraryCard;
         setCard(loadedCard);
         setStrategies(parseStrategies(String(results[1] || '')));
-        setRelatedCards(((results[2] as { data?: LibraryCard[] }).data || []).filter(item => item.dbf !== loadedCard.dbf));
-        if (kind === 'minion') {
-          setDetail(results[3] as MinionDetail);
-          setHistory(results[4] as MinionHistoryPayload);
+        setRelatedCards(dedupeLibraryCards(((results[2] as { data?: LibraryCard[] }).data || []).filter(item => item.dbf !== loadedCard.dbf)));
+        if (kind === 'minion' && pool === 'current') {
+          setDetail(results[3] as MinionDetail | null);
+          setHistory((results[4] as MinionHistoryPayload | null) || null);
           setSpellStats([]);
+        } else if (kind === 'spell' && pool === 'current') {
+          setSpellStats(results[3] ? flattenSpellStats(results[3]) : []);
+          setDetail(null);
+          setHistory(null);
         } else {
-          setSpellStats(flattenSpellStats(results[3]));
+          setSpellStats([]);
           setDetail(null);
           setHistory(null);
         }
-        const title = `${loadedCard.name.ru} — статистика ${kind === 'minion' ? 'существа' : 'заклинания'} BG Hearthstone | HS-Manacost`;
-        const description = `${loadedCard.name.ru}: таверна ${loadedCard.tavern_tier || '—'}, ${loadedCard.creature_type?.name_ru || 'заклинание'}, механики и актуальная статистика Полей сражений.`;
-        setLibraryMeta(title, description, cardPath(loadedCard, pool), loadedCard.images?.card || loadedCard.images?.art);
+        const title = pool === 'archive'
+          ? `${loadedCard.name.ru} — архивная карта BG Hearthstone | HS-Manacost`
+          : `${loadedCard.name.ru} — статистика ${kind === 'minion' ? 'существа' : 'заклинания'} BG Hearthstone | HS-Manacost`;
+        const description = pool === 'archive'
+          ? `${loadedCard.name.ru}: архивная карта Полей сражений Hearthstone вне активного пула.`
+          : `${loadedCard.name.ru}: таверна ${loadedCard.tavern_tier || '—'}, ${loadedCard.creature_type?.name_ru || 'заклинание'}, механики и актуальная статистика Полей сражений.`;
+        setLibraryMeta(title, description, cardPath(loadedCard, pool), detailCardImage(loadedCard));
       })
       .catch(errorValue => {
         if (alive) setError(errorValue?.message || 'Не удалось загрузить карту');
@@ -714,21 +779,25 @@ function DetailPage({ kind, pool, dbfId, navigatePath }: { kind: LibraryKind; po
   const similar = useMemo(() => {
     if (!card) return [];
     const mechanicSet = new Set((card.mechanics || []).map(item => item.slug));
-    return relatedCards
-      .map(item => {
-        const raceMatch = card.creature_type?.slug && item.creature_type?.slug === card.creature_type.slug ? 2 : 0;
-        const tierMatch = card.tavern_tier && item.tavern_tier === card.tavern_tier ? 1 : 0;
-        const mechanicMatch = (item.mechanics || []).filter(mechanic => mechanicSet.has(mechanic.slug)).length;
-        return { item, score: raceMatch + tierMatch + mechanicMatch };
-      })
-      .filter(row => row.score > 0)
+    const scored: Array<{ item: LibraryCard; score: number }> = [];
+    for (const item of relatedCards) {
+      const raceMatch = card.creature_type?.slug && item.creature_type?.slug === card.creature_type.slug ? 2 : 0;
+      const tierMatch = card.tavern_tier && item.tavern_tier === card.tavern_tier ? 1 : 0;
+      let mechanicMatch = 0;
+      for (const mechanic of item.mechanics || []) {
+        if (mechanicSet.has(mechanic.slug)) mechanicMatch += 1;
+      }
+      const score = raceMatch + tierMatch + mechanicMatch;
+      if (score > 0) scored.push({ item, score });
+    }
+    return scored
       .sort((a, b) => b.score - a.score || a.item.name.ru.localeCompare(b.item.name.ru, 'ru'))
       .slice(0, 6)
       .map(row => row.item);
   }, [card, relatedCards]);
 
   if (loading) return <div className="py-16 text-center font-hs text-[#6b4c2a]">Загружаем страницу карты...</div>;
-  if (error || !card) return <div className="rounded-lg border border-[#7f1d1d] bg-[#2a0f16] p-6 text-[#fecaca]">{error || 'Карта не найдена'}</div>;
+  if (error || !card) return <div className="rounded-lg border border-[#efb4b4] bg-[#fff1f1] p-6 text-[#8f2424]">{error || 'Карта не найдена'}</div>;
 
   const backPath = pool === 'archive' ? `/library/archive/${kind === 'spell' ? 'spells' : 'minions'}` : `/library/${kind === 'spell' ? 'spells' : 'minions'}`;
   const rounds = detail?.rounds || [];
@@ -736,70 +805,74 @@ function DetailPage({ kind, pool, dbfId, navigatePath }: { kind: LibraryKind; po
   const mainImpact = kind === 'spell' ? spellStat?.impact : detail?.impact;
   const mainAverage = kind === 'spell' ? spellStat?.average_placement : detail?.avg_placement_with;
   const mainPopularity = kind === 'spell' ? spellStat?.total_played : detail?.popularity;
+  const showStats = pool === 'current';
+  const heroImage = detailCardImage(card) || '/arena-logo-icon.webp?v=mana-swirl-20260624';
 
   return (
-    <div className="space-y-6 text-[#d9e3f2]">
-      <button type="button" onClick={() => navigatePath(backPath)} className="inline-flex items-center gap-2 rounded-md border border-[#2d405d] bg-[#101b2e] px-4 py-2 text-sm font-semibold text-[#d9e3f2] hover:border-[#e4c675]">
+    <div className="space-y-6 text-[#26374f]">
+      <button type="button" onClick={() => navigatePath(backPath)} className="inline-flex items-center gap-2 rounded-md border border-[#cbd9ed] bg-[#ffffff] px-4 py-2 text-sm font-semibold text-[#33445d] hover:border-[#d3af55]">
         <ArrowLeft size={16} /> Назад в {pool === 'archive' ? 'архив' : 'библиотеку'}
       </button>
 
-      <section className="overflow-hidden rounded-lg border border-[#263955] bg-[#07101f] shadow-[0_18px_48px_rgba(0,0,0,0.3)]">
+      <section className="overflow-hidden rounded-lg border border-[#cbd9ed] bg-[#f8fbff] shadow-[0_16px_38px_rgba(68,88,122,0.14)]">
         <div className="grid gap-6 p-4 sm:p-6 lg:grid-cols-[320px_1fr]">
           <div className="relative mx-auto w-full max-w-xs">
-            <img src={card.images?.card || card.images?.framed || '/arena-logo-icon.webp?v=mana-swirl-20260624'} alt={card.name.ru} className="w-full drop-shadow-[0_24px_32px_rgba(0,0,0,0.45)]" />
+            <img src={heroImage} alt={card.name.ru} className="w-full drop-shadow-[0_22px_30px_rgba(21,31,47,0.22)]" onError={fallbackBrokenHeroImage} />
           </div>
           <div className="space-y-5">
             <div>
-              <p className="font-hs text-xs uppercase tracking-[0.18em] text-[#e4c675]">{kind === 'minion' ? 'Существо' : 'Заклинание'} · {pool === 'archive' ? 'Архив' : 'Активный пул'}</p>
-              <h1 className="mt-2 font-hs text-4xl text-[#fff3c4] sm:text-5xl">{card.name.ru}</h1>
-              <p className="mt-1 text-lg text-[#9fb0c8]">{card.name.en}</p>
+              <p className="font-hs text-xs uppercase tracking-[0.18em] text-[#8a651f]">{kind === 'minion' ? 'Существо' : 'Заклинание'} · {pool === 'archive' ? 'Архив' : 'Активный пул'}</p>
+              <h1 className="mt-2 font-hs text-4xl text-[#23314a] sm:text-5xl">{card.name.ru}</h1>
+              <p className="mt-1 text-lg text-[#657893]">{card.name.en}</p>
             </div>
 
             <div className="flex flex-wrap gap-2">
-              {card.tavern_tier && <span className="inline-flex items-center gap-2 rounded-md bg-[#17243a] px-3 py-2 font-semibold"><img src={tavernIcon(card.tavern_tier)} alt="" className="h-8 w-8" />Таверна {card.tavern_tier}</span>}
-              {card.creature_type && <span className="inline-flex items-center gap-2 rounded-md bg-[#17243a] px-3 py-2 font-semibold">{RACE_ICON_BY_SLUG[card.creature_type.slug] && <img src={RACE_ICON_BY_SLUG[card.creature_type.slug]} alt="" className="h-8 w-8 rounded-full" />} {card.creature_type.name_ru}</span>}
-              {card.mechanics.map(mechanic => <span key={mechanic.slug} className="rounded-md bg-[#2a1d35] px-3 py-2 font-semibold text-[#f0d2ff]">{mechanic.name_ru}</span>)}
-              {card.duos_only && <span className="rounded-md bg-[#1f3a5f] px-3 py-2 font-semibold text-[#bfdbfe]">Дуо</span>}
+              {card.tavern_tier && <span className="inline-flex items-center gap-2 rounded-md border border-[#d6e1f1] bg-[#ffffff] px-3 py-2 font-semibold text-[#33445d]"><img src={tavernIcon(card.tavern_tier)} alt="" className="h-8 w-8" />Таверна {card.tavern_tier}</span>}
+              {card.creature_type && <span className="inline-flex items-center gap-2 rounded-md border border-[#d6e1f1] bg-[#ffffff] px-3 py-2 font-semibold text-[#33445d]">{RACE_ICON_BY_SLUG[card.creature_type.slug] && <img src={RACE_ICON_BY_SLUG[card.creature_type.slug]} alt="" className="h-8 w-8 rounded-full" />} {card.creature_type.name_ru}</span>}
+              {card.mechanics.map(mechanic => <span key={mechanic.slug} className="rounded-md border border-[#e5d3f1] bg-[#fbf4ff] px-3 py-2 font-semibold text-[#603f77]">{mechanic.name_ru}</span>)}
+              {card.duos_only && <span className="rounded-md border border-[#bfdbfe] bg-[#eff6ff] px-3 py-2 font-semibold text-[#1f4e88]">Дуо</span>}
             </div>
 
-            <div className="rounded-md border border-[#263955] bg-[#0d1728] p-4">
-              <p className="whitespace-pre-line text-base leading-7 text-[#e9eef8]">{card.text_ru}</p>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <MetricCard label="Impact" value={formatDecimal(mainImpact, 2)} tone={metricTone(mainImpact)} />
-              <MetricCard label="Среднее место" value={formatDecimal(mainAverage, 2)} />
-              <MetricCard label={kind === 'spell' ? 'Сыграно' : 'Популярность'} value={kind === 'spell' ? formatCount(mainPopularity) : formatPercent(mainPopularity, 1)} />
-              <MetricCard label="Стратегии" value={String(usedStrategies.length)} caption="где карта встречается" />
-            </div>
+            {showStats ? (
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <MetricCard label="Impact" value={formatDecimal(mainImpact, 2)} tone={metricTone(mainImpact)} />
+                <MetricCard label="Среднее место" value={formatDecimal(mainAverage, 2)} />
+                <MetricCard label={kind === 'spell' ? 'Сыграно' : 'Популярность'} value={kind === 'spell' ? formatCount(mainPopularity) : formatPercent(mainPopularity, 1)} />
+                <MetricCard label="Стратегии" value={String(usedStrategies.length)} caption="где карта встречается" />
+              </div>
+            ) : (
+              <div className="rounded-md border border-[#d6e1f1] bg-[#ffffff] p-4 text-sm text-[#5e708a]">
+                Карта вне активного пула. Для архива показываем справочную карточку без статистики, чтобы страница не зависела от мета-данных и не падала на старых dbf.
+              </div>
+            )}
           </div>
         </div>
       </section>
 
-      {kind === 'minion' && detail && (
-        <section className="rounded-lg border border-[#263955] bg-[#07101f] p-4 sm:p-5">
+      {kind === 'minion' && showStats && detail && (
+        <section className="rounded-lg border border-[#cbd9ed] bg-[#f8fbff] p-4 shadow-sm sm:p-5">
           <div className="mb-4 flex items-center gap-3">
-            <BarChart3 className="text-[#e4c675]" />
-            <h2 className="font-hs text-2xl text-[#fff3c4]">Раунды и динамика</h2>
+            <BarChart3 className="text-[#8a651f]" />
+            <h2 className="font-hs text-2xl text-[#26374f]">Раунды и динамика</h2>
           </div>
           <div className="grid gap-4 lg:grid-cols-2">
             <ChartPanel title="Влияние по раундам" subtitle="Насколько наличие существа меняет среднее место">
-              <MiniChart points={rounds.map(row => ({ x: row.combat_round, y: row.impact }))} color="#f1d47b" />
+              <MiniChart points={rounds.map(row => ({ x: row.combat_round, y: row.impact }))} color="#b58a2d" />
             </ChartPanel>
             <ChartPanel title="Доля побед в боях" subtitle="Combat winrate по раундам">
-              <MiniChart points={rounds.map(row => ({ x: row.combat_round, y: row.combat_winrate }))} color="#9ee08f" unit="%" />
+              <MiniChart points={rounds.map(row => ({ x: row.combat_round, y: row.combat_winrate }))} color="#3f9b52" unit="%" />
             </ChartPanel>
             <ChartPanel title="Среднее место" subtitle="Меньше значение лучше">
-              <MiniChart points={rounds.map(row => ({ x: row.combat_round, y: row.avg_placement_with }))} color="#8ec5ff" invert />
+              <MiniChart points={rounds.map(row => ({ x: row.combat_round, y: row.avg_placement_with }))} color="#3e7fc1" invert />
             </ChartPanel>
             <ChartPanel title="Размер выборки" subtitle="Сколько игр включено в раундовую точку">
-              <MiniChart points={rounds.map(row => ({ x: row.combat_round, y: row.games_with_minion }))} color="#d6b4ff" />
+              <MiniChart points={rounds.map(row => ({ x: row.combat_round, y: row.games_with_minion }))} color="#8a5fb8" />
             </ChartPanel>
           </div>
 
-          <div className="mt-5 overflow-hidden rounded-md border border-[#22324b]">
+          <div className="mt-5 overflow-hidden rounded-md border border-[#cbd9ed]">
             <table className="w-full min-w-[760px] text-sm">
-              <thead className="bg-[#101b2e] text-left text-[#fff3c4]">
+              <thead className="bg-[#eef4fd] text-left text-[#26374f]">
                 <tr>
                   <th className="px-3 py-2">Раунд</th>
                   <th className="px-3 py-2">Impact</th>
@@ -809,10 +882,10 @@ function DetailPage({ kind, pool, dbfId, navigatePath }: { kind: LibraryKind; po
                   <th className="px-3 py-2">W/L</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#22324b] bg-[#0b1424]">
+              <tbody className="divide-y divide-[#d6e1f1] bg-[#ffffff]">
                 {rounds.map(row => (
                   <tr key={row.combat_round}>
-                    <td className="px-3 py-2 font-semibold text-[#e4c675]">{row.combat_round}</td>
+                    <td className="px-3 py-2 font-semibold text-[#8a651f]">{row.combat_round}</td>
                     <td className={`px-3 py-2 ${metricTone(row.impact)}`}>{formatDecimal(row.impact, 2)}</td>
                     <td className="px-3 py-2">{formatPercent(row.combat_winrate, 1)}</td>
                     <td className="px-3 py-2">{formatDecimal(row.avg_placement_with, 2)}</td>
@@ -826,19 +899,19 @@ function DetailPage({ kind, pool, dbfId, navigatePath }: { kind: LibraryKind; po
         </section>
       )}
 
-      {kind === 'minion' && historyRows.length > 1 && (
-        <section className="rounded-lg border border-[#263955] bg-[#07101f] p-4 sm:p-5">
-          <h2 className="mb-4 font-hs text-2xl text-[#fff3c4]">История меты</h2>
+      {kind === 'minion' && showStats && historyRows.length > 1 && (
+        <section className="rounded-lg border border-[#cbd9ed] bg-[#f8fbff] p-4 shadow-sm sm:p-5">
+          <h2 className="mb-4 font-hs text-2xl text-[#26374f]">История меты</h2>
           <div className="grid gap-4 lg:grid-cols-2">
-            <ChartPanel title="Impact по обновлениям"><MiniChart points={historyRows.map(row => ({ x: row.fetched_at, y: Number(row.impact) }))} color="#f1d47b" /></ChartPanel>
-            <ChartPanel title="Популярность"><MiniChart points={historyRows.map(row => ({ x: row.fetched_at, y: Number(row.popularity) }))} color="#d6b4ff" unit="%" /></ChartPanel>
+            <ChartPanel title="Impact по обновлениям"><MiniChart points={historyRows.map(row => ({ x: row.fetched_at, y: Number(row.impact) }))} color="#b58a2d" /></ChartPanel>
+            <ChartPanel title="Популярность"><MiniChart points={historyRows.map(row => ({ x: row.fetched_at, y: Number(row.popularity) }))} color="#8a5fb8" unit="%" /></ChartPanel>
           </div>
         </section>
       )}
 
-      {kind === 'spell' && (
-        <section className="rounded-lg border border-[#263955] bg-[#07101f] p-4 sm:p-5">
-          <h2 className="mb-4 font-hs text-2xl text-[#fff3c4]">Статистика Firestone</h2>
+      {kind === 'spell' && showStats && (
+        <section className="rounded-lg border border-[#cbd9ed] bg-[#f8fbff] p-4 shadow-sm sm:p-5">
+          <h2 className="mb-4 font-hs text-2xl text-[#26374f]">Статистика Firestone</h2>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <MetricCard label="Impact" value={formatDecimal(spellStat?.impact, 2)} tone={metricTone(spellStat?.impact)} />
             <MetricCard label="Среднее место" value={formatDecimal(spellStat?.average_placement, 2)} />
@@ -848,23 +921,24 @@ function DetailPage({ kind, pool, dbfId, navigatePath }: { kind: LibraryKind; po
         </section>
       )}
 
-      <section className="rounded-lg border border-[#263955] bg-[#07101f] p-4 sm:p-5">
-        <h2 className="mb-4 font-hs text-2xl text-[#fff3c4]">Используется в стратегиях</h2>
+      {showStats && (
+      <section className="rounded-lg border border-[#cbd9ed] bg-[#f8fbff] p-4 shadow-sm sm:p-5">
+        <h2 className="mb-4 font-hs text-2xl text-[#26374f]">Используется в стратегиях</h2>
         {usedStrategies.length ? (
           <div className="grid gap-3 md:grid-cols-2">
             {usedStrategies.map(strategy => (
-              <a key={strategy.key} href="/classes" onClick={(event) => { event.preventDefault(); navigatePath('/classes'); }} className="rounded-md border border-[#2d405d] bg-[#0d1728] p-4 transition-colors hover:border-[#e4c675]" style={{ textDecoration: 'none' }}>
+              <a key={strategy.key} href="/classes" onClick={(event) => { event.preventDefault(); navigatePath('/classes'); }} className="rounded-md border border-[#cbd9ed] bg-[#ffffff] p-4 transition-colors hover:border-[#d3af55]" style={{ textDecoration: 'none' }}>
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-[#e4c675]">{strategy.source} · {strategy.tier || 'meta'}</p>
-                    <h3 className="mt-1 font-hs text-xl text-[#fff3c4]">{strategy.title}</h3>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-[#8a651f]">{strategy.source} · {strategy.tier || 'meta'}</p>
+                    <h3 className="mt-1 font-hs text-xl text-[#26374f]">{strategy.title}</h3>
                   </div>
-                  <ExternalLink size={18} className="text-[#8fa4c0]" />
+                  <ExternalLink size={18} className="text-[#7b8da6]" />
                 </div>
-                {strategy.description && <p className="mt-2 line-clamp-2 text-sm text-[#9fb0c8]">{strategy.description}</p>}
+                {strategy.description && <p className="mt-2 line-clamp-2 text-sm text-[#657893]">{strategy.description}</p>}
                 <div className="mt-3 flex flex-wrap gap-1.5">
                   {(strategy.cards || []).slice(0, 8).map(item => (
-                    <span key={`${strategy.key}-${item.id}-${item.dbfId}`} className={`rounded px-2 py-1 text-xs ${Number(item.dbfId) === Number(card.dbf) || item.id === card.card_id ? 'bg-[#e4c675] text-[#101827]' : 'bg-[#14223a] text-[#c8d5e8]'}`}>
+                    <span key={`${strategy.key}-${item.id}-${item.dbfId}`} className={`rounded px-2 py-1 text-xs ${Number(item.dbfId) === Number(card.dbf) || item.id === card.card_id ? 'bg-[#e4c675] text-[#101827]' : 'bg-[#eef4fd] text-[#33445d]'}`}>
                       {item.ruName || item.name || item.id}
                     </span>
                   ))}
@@ -873,20 +947,21 @@ function DetailPage({ kind, pool, dbfId, navigatePath }: { kind: LibraryKind; po
             ))}
           </div>
         ) : (
-          <div className="rounded-md border border-[#22324b] bg-[#0d1728] p-6 text-center text-[#9fb0c8]">
+          <div className="rounded-md border border-[#cbd9ed] bg-[#ffffff] p-6 text-center text-[#657893]">
             В текущих мета-сборках эта карта не найдена.
           </div>
         )}
       </section>
+      )}
 
-      {similar.length > 0 && (
-        <section className="rounded-lg border border-[#263955] bg-[#07101f] p-4 sm:p-5">
-          <h2 className="mb-4 font-hs text-2xl text-[#fff3c4]">Похожие карты</h2>
+      {showStats && similar.length > 0 && (
+        <section className="rounded-lg border border-[#cbd9ed] bg-[#f8fbff] p-4 shadow-sm sm:p-5">
+          <h2 className="mb-4 font-hs text-2xl text-[#26374f]">Похожие карты</h2>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
             {similar.map(item => (
-              <a key={item.dbf} href={cardPath(item, 'current')} onClick={(event) => { event.preventDefault(); navigatePath(cardPath(item, 'current')); }} className="rounded-md border border-[#22324b] bg-[#0d1728] p-2 text-center hover:border-[#e4c675]" style={{ textDecoration: 'none' }}>
-                <img src={item.images?.card || item.images?.framed || '/arena-logo-icon.webp?v=mana-swirl-20260624'} alt={item.name.ru} className="mx-auto h-40 object-contain" loading="lazy" />
-                <p className="mt-2 line-clamp-2 font-hs text-sm text-[#fff3c4]">{item.name.ru}</p>
+              <a key={item.dbf} href={cardPath(item, 'current')} onClick={(event) => { event.preventDefault(); navigatePath(cardPath(item, 'current')); }} className="rounded-md p-2 text-center transition-transform hover:-translate-y-1" style={{ textDecoration: 'none' }}>
+                <img src={primaryCardImage(item) || '/arena-logo-icon.webp?v=mana-swirl-20260624'} alt={item.name.ru} className="mx-auto h-40 object-contain drop-shadow-[0_12px_16px_rgba(21,31,47,0.18)]" loading="lazy" onError={hideBrokenImage} />
+                <p className="mt-2 line-clamp-2 font-hs text-sm text-[#26374f]">{item.name.ru}</p>
               </a>
             ))}
           </div>
