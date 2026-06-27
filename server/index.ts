@@ -1797,6 +1797,8 @@ async function fetchArenaDecksData(limit = ARENA_DECKS_MAX_LIMIT) {
 const DATASET_API_ORIGIN = 'https://api.hs-manacost.ru';
 const DATASET_API_BASE = `${DATASET_API_ORIGIN}/datasets`;
 const BG_HEROES_API_URL = `${DATASET_API_ORIGIN}/demo/view/hsreplay_battlegrounds_heroes`;
+const BG_LIBRARY_API_BASE = 'https://db.kolodahs.ru/api/v1';
+const BG_FIRESTONE_SPELLS_API_URL = `${DATASET_API_ORIGIN}/demo/view/firestone_battlegrounds_spells`;
 const HEARTHSTONEJSON_RU_CARDS_URL = 'https://api.hearthstonejson.com/v1/latest/ruRU/cards.collectible.json';
 const EXTERNAL_DATASET_CACHE_MS = DATASET_MEMORY_CACHE_MS;
 const TIERLIST_API_CACHE_MS = DATASET_MEMORY_CACHE_MS;
@@ -3332,6 +3334,141 @@ app.get('/api/bg/heroes', async (req, res) => {
     return sendJsonCached(req, res, payload, etag, 'public, max-age=300, stale-while-revalidate=900');
   } catch (err: any) {
     return res.status(502).json({ error: err?.message ?? 'BG heroes unavailable' });
+  }
+});
+
+app.get('/api/bg/library/meta', async (req, res) => {
+  try {
+    const payload = await fetchJsonWithTimeout(`${BG_LIBRARY_API_BASE}/meta`, {
+      headers: { Accept: 'application/json' },
+    }, 20_000);
+    const etag = `"bg-library-meta-${createHash('sha1').update(JSON.stringify(payload)).digest('hex').slice(0, 16)}"`;
+    return sendJsonCached(req, res, payload, etag, 'public, max-age=300, stale-while-revalidate=900');
+  } catch (err: any) {
+    return res.status(502).json({ error: err?.message ?? 'BG library meta unavailable' });
+  }
+});
+
+app.get('/api/bg/library/cards', async (req, res) => {
+  const cardType = String(req.query.card_type || 'minion').toLowerCase();
+  const inPool = String(req.query.in_pool ?? '1');
+  const allowedTypes = new Set(['minion', 'spell', 'all']);
+  const allowedPool = new Set(['0', '1', 'all']);
+  if (!allowedTypes.has(cardType)) return res.status(400).json({ error: 'Unknown BG card type' });
+  if (!allowedPool.has(inPool)) return res.status(400).json({ error: 'Unknown BG pool filter' });
+
+  try {
+    const allCards: any[] = [];
+    let page = 1;
+    let total = 0;
+    let totalPages = 1;
+    do {
+      const params = new URLSearchParams({ per_page: '200', page: String(page) });
+      if (cardType !== 'all') params.set('card_type', cardType);
+      if (inPool !== 'all') params.set('in_pool', inPool);
+      for (const name of ['q', 'tier', 'creature_type', 'mechanic', 'mechanics']) {
+        const value = req.query[name];
+        if (typeof value === 'string' && value.trim()) params.set(name, value.trim());
+      }
+      const payload = await fetchJsonWithTimeout(`${BG_LIBRARY_API_BASE}/cards?${params.toString()}`, {
+        headers: { Accept: 'application/json' },
+      }, 20_000);
+      const cards = Array.isArray(payload?.data) ? payload.data : [];
+      allCards.push(...cards);
+      total = Number(payload?.pagination?.total || allCards.length);
+      totalPages = Math.min(30, Number(payload?.pagination?.total_pages || page));
+      page += 1;
+    } while (page <= totalPages);
+
+    const data = {
+      data: allCards,
+      pagination: {
+        page: 1,
+        per_page: allCards.length,
+        total,
+        total_pages: 1,
+        has_next: false,
+        has_prev: false,
+      },
+      filters: { card_type: cardType, in_pool: inPool },
+    };
+    const etagBase = `${cardType}-${inPool}-${total}-${allCards.map(card => card.updated_at || card.card_id || card.dbf).join('|')}`;
+    const etag = `"bg-library-cards-${createHash('sha1').update(etagBase).digest('hex').slice(0, 16)}"`;
+    return sendJsonCached(req, res, data, etag, 'public, max-age=300, stale-while-revalidate=900');
+  } catch (err: any) {
+    return res.status(502).json({ error: err?.message ?? 'BG library cards unavailable' });
+  }
+});
+
+app.get('/api/bg/library/cards/by-dbf/:dbfId', async (req, res) => {
+  const dbfId = Number(req.params.dbfId);
+  if (!Number.isFinite(dbfId)) return res.status(400).json({ error: 'Invalid dbf id' });
+  try {
+    const payload = await fetchJsonWithTimeout(`${BG_LIBRARY_API_BASE}/cards/by-dbf/${dbfId}`, {
+      headers: { Accept: 'application/json' },
+    }, 20_000);
+    const card = payload?.data || payload;
+    const etag = `"bg-library-card-${createHash('sha1').update(JSON.stringify(card)).digest('hex').slice(0, 16)}"`;
+    return sendJsonCached(req, res, card, etag, 'public, max-age=300, stale-while-revalidate=900');
+  } catch (err: any) {
+    return res.status(502).json({ error: err?.message ?? 'BG library card unavailable' });
+  }
+});
+
+app.get('/api/bg/library/minion-stats', async (req, res) => {
+  try {
+    const payload = await fetchJsonWithTimeout(`${DATASET_API_ORIGIN}/api/db/bg/minions?limit=500`, {
+      headers: { Accept: 'application/json' },
+    }, 20_000);
+    const etagBase = `${payload?.latest_run?.completed_at || Date.now()}-${payload?.total || 0}`;
+    const etag = `"bg-minion-stats-${createHash('sha1').update(etagBase).digest('hex').slice(0, 16)}"`;
+    return sendJsonCached(req, res, payload, etag, 'public, max-age=300, stale-while-revalidate=900');
+  } catch (err: any) {
+    return res.status(502).json({ error: err?.message ?? 'BG minion stats unavailable' });
+  }
+});
+
+app.get('/api/bg/library/minions/:dbfId', async (req, res) => {
+  const dbfId = Number(req.params.dbfId);
+  if (!Number.isFinite(dbfId)) return res.status(400).json({ error: 'Invalid dbf id' });
+  try {
+    const payload = await fetchJsonWithTimeout(`${DATASET_API_ORIGIN}/api/db/bg/minions/${dbfId}`, {
+      headers: { Accept: 'application/json' },
+    }, 20_000);
+    const etag = `"bg-minion-detail-${createHash('sha1').update(JSON.stringify(payload)).digest('hex').slice(0, 16)}"`;
+    return sendJsonCached(req, res, payload, etag, 'public, max-age=300, stale-while-revalidate=900');
+  } catch (err: any) {
+    return res.status(502).json({ error: err?.message ?? 'BG minion detail unavailable' });
+  }
+});
+
+app.get('/api/bg/library/minions/:dbfId/history', async (req, res) => {
+  const dbfId = Number(req.params.dbfId);
+  if (!Number.isFinite(dbfId)) return res.status(400).json({ error: 'Invalid dbf id' });
+  try {
+    const payload = await fetchJsonWithTimeout(`${DATASET_API_ORIGIN}/api/db/bg/minions/${dbfId}/history`, {
+      headers: { Accept: 'application/json' },
+    }, 20_000);
+    const etag = `"bg-minion-history-${createHash('sha1').update(JSON.stringify(payload)).digest('hex').slice(0, 16)}"`;
+    return sendJsonCached(req, res, payload, etag, 'public, max-age=300, stale-while-revalidate=900');
+  } catch (err: any) {
+    return res.status(502).json({ error: err?.message ?? 'BG minion history unavailable' });
+  }
+});
+
+app.get('/api/bg/library/spell-stats', async (req, res) => {
+  try {
+    const payload = await fetchJsonWithTimeout(BG_FIRESTONE_SPELLS_API_URL, {
+      headers: { Accept: 'application/json' },
+    }, 20_000);
+    if (!payload?.ok || !payload?.view?.tiers) {
+      return res.status(502).json({ error: 'Firestone spell source returned an invalid payload' });
+    }
+    const etagBase = `${payload.fetched_at || Date.now()}-${payload.view.total_data_points || 0}`;
+    const etag = `"bg-spell-stats-${createHash('sha1').update(etagBase).digest('hex').slice(0, 16)}"`;
+    return sendJsonCached(req, res, payload, etag, 'public, max-age=300, stale-while-revalidate=900');
+  } catch (err: any) {
+    return res.status(502).json({ error: err?.message ?? 'BG spell stats unavailable' });
   }
 });
 

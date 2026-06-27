@@ -235,6 +235,160 @@ const PAGES = {
       <p>Герои Battlegrounds по тирам со средним местом и популярностью.</p>
       <p><a href="/">На главную</a> | <a href="/classes">Конструктор стратегий</a> | <a href="/tierlist">Тир-лист</a></p>`
   },
+  '/library': {
+    title: 'Библиотека карт Полей сражений — BG Hearthstone | HS-Manacost',
+    description: 'Актуальная библиотека существ и заклинаний Полей сражений Hearthstone: фильтры по таверне, типу существ, механикам и подробная статистика карт.',
+    canonical: '/library',
+    ogType: 'website',
+    h1: 'Библиотека карт Полей сражений',
+    structuredData: [
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          { "@type": "ListItem", "position": 1, "name": "Главная", "item": SITE_URL },
+          { "@type": "ListItem", "position": 2, "name": "Библиотека", "item": `${SITE_URL}/library` }
+        ]
+      },
+      {
+        "@type": "Dataset",
+        "@id": `${SITE_URL}/library#dataset`,
+        "name": "Библиотека карт Полей сражений",
+        "description": "Актуальные существа и заклинания активного пула Battlegrounds с русскими названиями, механиками и статистикой.",
+        "url": `${SITE_URL}/library`,
+        "creator": { "@type": "Organization", "name": "Manacost" },
+        "about": { "@type": "VideoGame", "name": "Hearthstone Battlegrounds" }
+      }
+    ],
+    noscript: `
+      <h1>Библиотека карт Полей сражений</h1>
+      <p>Актуальные существа и заклинания активного пула Battlegrounds: таверна, тип существа, механики, текст карты и статистика.</p>
+      <p><a href="/library/minions">Существа</a> | <a href="/library/spells">Заклинания</a> | <a href="/library/archive">Архив карт вне пула</a></p>`
+  },
+  '/library/minions': {
+    title: 'Существа Полей сражений — библиотека BG Hearthstone | HS-Manacost',
+    description: 'Все актуальные существа Полей сражений Hearthstone: фильтры по таверне, типу существ, механикам и подробная статистика по раундам.',
+    canonical: '/library/minions',
+    ogType: 'website',
+    h1: 'Существа Полей сражений',
+    structuredData: [
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          { "@type": "ListItem", "position": 1, "name": "Главная", "item": SITE_URL },
+          { "@type": "ListItem", "position": 2, "name": "Библиотека", "item": `${SITE_URL}/library` },
+          { "@type": "ListItem", "position": 3, "name": "Существа", "item": `${SITE_URL}/library/minions` }
+        ]
+      },
+      {
+        "@type": "ItemList",
+        "@id": `${SITE_URL}/library/minions#minions`,
+        "name": "Существа Полей сражений",
+        "description": "Актуальные существа Battlegrounds, сгруппированные по уровням таверны."
+      }
+    ],
+    noscript: `
+      <h1>Существа Полей сражений</h1>
+      <p>Актуальный пул существ Battlegrounds с фильтрами по таверне, типу и механикам.</p>
+      <p><a href="/library">Библиотека</a> | <a href="/library/spells">Заклинания</a> | <a href="/library/archive/minions">Архив существ</a></p>`
+  },
+  '/library/spells': {
+    title: 'Заклинания Полей сражений — библиотека BG Hearthstone | HS-Manacost',
+    description: 'Все актуальные заклинания таверны Полей сражений Hearthstone с русскими названиями, механиками и статистикой Firestone.',
+    canonical: '/library/spells',
+    ogType: 'website',
+    h1: 'Заклинания Полей сражений',
+    structuredData: [
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          { "@type": "ListItem", "position": 1, "name": "Главная", "item": SITE_URL },
+          { "@type": "ListItem", "position": 2, "name": "Библиотека", "item": `${SITE_URL}/library` },
+          { "@type": "ListItem", "position": 3, "name": "Заклинания", "item": `${SITE_URL}/library/spells` }
+        ]
+      },
+      {
+        "@type": "ItemList",
+        "@id": `${SITE_URL}/library/spells#spells`,
+        "name": "Заклинания Полей сражений",
+        "description": "Актуальные заклинания таверны Battlegrounds, сгруппированные по уровням таверны."
+      }
+    ],
+    noscript: `
+      <h1>Заклинания Полей сражений</h1>
+      <p>Актуальный пул заклинаний Battlegrounds со статистикой Firestone.</p>
+      <p><a href="/library">Библиотека</a> | <a href="/library/minions">Существа</a> | <a href="/library/archive/spells">Архив заклинаний</a></p>`
+  },
+  '/library/archive': {
+    title: 'Архив карт Полей сражений — карты вне пула | HS-Manacost',
+    description: 'Архив существ и заклинаний Полей сражений Hearthstone, которые были в режиме ранее, но сейчас не находятся в активном пуле.',
+    canonical: '/library/archive',
+    ogType: 'website',
+    h1: 'Архив карт Полей сражений',
+    structuredData: [
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          { "@type": "ListItem", "position": 1, "name": "Главная", "item": SITE_URL },
+          { "@type": "ListItem", "position": 2, "name": "Библиотека", "item": `${SITE_URL}/library` },
+          { "@type": "ListItem", "position": 3, "name": "Архив", "item": `${SITE_URL}/library/archive` }
+        ]
+      },
+      {
+        "@type": "Dataset",
+        "@id": `${SITE_URL}/library/archive#dataset`,
+        "name": "Архив карт Полей сражений",
+        "description": "Существа и заклинания Battlegrounds вне текущего активного пула."
+      }
+    ],
+    noscript: `
+      <h1>Архив карт Полей сражений</h1>
+      <p>Карты Battlegrounds, которые сейчас не находятся в активном пуле: старые существа и заклинания для справки и поиска.</p>
+      <p><a href="/library">Актуальная библиотека</a> | <a href="/library/archive/minions">Архив существ</a> | <a href="/library/archive/spells">Архив заклинаний</a></p>`
+  },
+  '/library/archive/minions': {
+    title: 'Архив существ Полей сражений — карты вне пула | HS-Manacost',
+    description: 'Архив существ Полей сражений Hearthstone, которые сейчас не находятся в активном пуле, но доступны для справки и поиска.',
+    canonical: '/library/archive/minions',
+    ogType: 'website',
+    h1: 'Архив существ Полей сражений',
+    structuredData: [
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          { "@type": "ListItem", "position": 1, "name": "Главная", "item": SITE_URL },
+          { "@type": "ListItem", "position": 2, "name": "Библиотека", "item": `${SITE_URL}/library` },
+          { "@type": "ListItem", "position": 3, "name": "Архив", "item": `${SITE_URL}/library/archive` },
+          { "@type": "ListItem", "position": 4, "name": "Существа вне пула", "item": `${SITE_URL}/library/archive/minions` }
+        ]
+      }
+    ],
+    noscript: `
+      <h1>Архив существ Полей сражений</h1>
+      <p>Существа Battlegrounds, которые сейчас не находятся в активном пуле.</p>
+      <p><a href="/library">Актуальная библиотека</a> | <a href="/library/archive">Архив</a> | <a href="/library/archive/spells">Архив заклинаний</a></p>`
+  },
+  '/library/archive/spells': {
+    title: 'Архив заклинаний Полей сражений — карты вне пула | HS-Manacost',
+    description: 'Архив заклинаний таверны Полей сражений Hearthstone, которые сейчас не находятся в активном пуле.',
+    canonical: '/library/archive/spells',
+    ogType: 'website',
+    h1: 'Архив заклинаний Полей сражений',
+    structuredData: [
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          { "@type": "ListItem", "position": 1, "name": "Главная", "item": SITE_URL },
+          { "@type": "ListItem", "position": 2, "name": "Библиотека", "item": `${SITE_URL}/library` },
+          { "@type": "ListItem", "position": 3, "name": "Архив", "item": `${SITE_URL}/library/archive` },
+          { "@type": "ListItem", "position": 4, "name": "Заклинания вне пула", "item": `${SITE_URL}/library/archive/spells` }
+        ]
+      }
+    ],
+    noscript: `
+      <h1>Архив заклинаний Полей сражений</h1>
+      <p>Заклинания Battlegrounds, которые сейчас не находятся в активном пуле.</p>
+      <p><a href="/library">Актуальная библиотека</a> | <a href="/library/archive">Архив</a> | <a href="/library/archive/minions">Архив существ</a></p>`
+  },
   '/articles': {
     title: 'Статьи и гайды по Арене Hearthstone | HS-Arena',
     description: 'Гайды, разборы мета и советы по режиму Арена в Hearthstone от команды Manacost. Актуальные статьи для игроков всех уровней.',

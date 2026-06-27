@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo, memo, useDeferredValue } from 'react';
 import { createPortal } from 'react-dom';
-import { Trophy, Scroll, RefreshCw, AlertTriangle, X, Search, Star, Home, BookOpen, Menu, ChevronLeft, ChevronRight, Grid3X3, List, LogIn, Eye, EyeOff, UserCircle, ChevronDown } from 'lucide-react';
+import { Trophy, Scroll, RefreshCw, AlertTriangle, X, Search, Star, Home, BookOpen, Menu, ChevronLeft, ChevronRight, Grid3X3, List, LogIn, Eye, EyeOff, UserCircle, ChevronDown, Library } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -5490,6 +5490,7 @@ function SiteFooter({ onNavigate, updatedAt }: { onNavigate: (tab: string) => vo
     { label: 'Тир-лист',  href: '/tierlist',    tab: 'tierlist'    },
     { label: 'Конструктор тир-листов', href: '/legendaries', tab: 'legendaries' },
     { label: 'Герои',      href: '/heroes',      tab: 'heroes'      },
+    { label: 'Библиотека', href: '/library',     tab: 'library'     },
     { label: 'Статьи',     href: '/articles',    tab: 'articles'    },
   ];
   return (
@@ -7573,6 +7574,7 @@ const TABS = [
   { id: 'tierlist',    label: 'Тир-лист',   icon: Scroll,   slug: '/tierlist'   },
   { id: 'legendaries', label: 'Конструктор тир-листов', icon: Star,      slug: '/legendaries'},
   { id: 'heroes',      label: 'Герои',      icon: UserCircle, slug: '/heroes'    },
+  { id: 'library',     label: 'Библиотека', icon: Library,  slug: '/library'   },
 ] as const;
 
 const NETWORK_SITES = [
@@ -7631,6 +7633,11 @@ const PAGE_META: Record<string, { title: string; description: string; slug: stri
     title:       'Тир-лист героев — Battlegrounds | HS-Manacost',
     description: 'Тир-лист героев Полей сражений: портреты, среднее место, популярность и распределение по тирам.',
     slug:        '/heroes',
+  },
+  library:     {
+    title:       'Библиотека карт Полей сражений — BG Hearthstone | HS-Manacost',
+    description: 'Актуальная библиотека существ и заклинаний Полей сражений Hearthstone: фильтры по таверне, типу, механикам, архив и подробная статистика карт.',
+    slug:        '/library',
   },
   articles:    {
     title:       'Статьи и гайды по Арене Hearthstone | HS-Arena',
@@ -7699,6 +7706,7 @@ const LazyLegendaries = React.lazy(() => import('./features/DeferredRoutes').the
 const LazyLoginPanel = React.lazy(() => import('./features/DeferredRoutes').then(module => ({ default: module.LoginPanel })));
 const LazyAdminPanel = React.lazy(() => import('./features/DeferredRoutes').then(module => ({ default: module.AdminPanel })));
 const LazyArticlesTab = React.lazy(() => import('./features/DeferredRoutes').then(module => ({ default: module.ArticlesTab })));
+const LazyBgLibrary = React.lazy(() => import('./features/BgLibrary'));
 
 function RouteFallback({ minHeight = 520 }: { minHeight?: number }) {
   return (
@@ -7824,6 +7832,7 @@ export default function App() {
     : '';
   const [activeTab, setActiveTab] = useState<TabId>(() => tabFromPath(window.location.pathname));
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [locationPath, setLocationPath] = useState(() => window.location.pathname);
   const [locationSearch, setLocationSearch] = useState(() => window.location.search);
 
   useEffect(() => {
@@ -7849,6 +7858,20 @@ export default function App() {
     if (window.location.pathname !== slug || window.location.search || window.location.hash) {
       window.history.pushState({ tab }, '', slug);
     }
+    setLocationPath(slug);
+    setLocationSearch('');
+    setActiveTab(tab);
+    setMobileMenuOpen(false);
+    applyPageMeta(tab);
+    window.scrollTo({ top: 0, behavior: 'auto' });
+  }, []);
+
+  const navigatePath = useCallback((path: string) => {
+    const tab = tabFromPath(path);
+    if (window.location.pathname !== path || window.location.search || window.location.hash) {
+      window.history.pushState({ tab }, '', path);
+    }
+    setLocationPath(path);
     setLocationSearch('');
     setActiveTab(tab);
     setMobileMenuOpen(false);
@@ -7860,6 +7883,7 @@ export default function App() {
   useEffect(() => {
     const onPop = (e: PopStateEvent) => {
       const tab = e.state?.tab ?? tabFromPath(window.location.pathname);
+      setLocationPath(window.location.pathname);
       setLocationSearch(window.location.search);
       setActiveTab(tab);
       applyPageMeta(tab);
@@ -8483,7 +8507,7 @@ export default function App() {
 
         {/* Parchment container */}
         <div className={`arena-content w-full mx-auto bg-parchment rounded-xl border-[3px] sm:border-[4px] border-[#6b4c2a] shadow-[inset_0_0_60px_rgba(139,69,19,0.15),0_0_0_2px_#2c1e16,0_15px_30px_rgba(0,0,0,0.6)] relative z-0 ${
-          activeTab === 'winrates' || activeTab === 'legendaries'
+          activeTab === 'winrates' || activeTab === 'legendaries' || activeTab === 'library'
             ? 'max-w-[1600px] p-3 sm:p-4 md:p-5'
             : 'max-w-6xl p-3 sm:p-6 md:p-10'
         }`}>
@@ -8527,6 +8551,11 @@ export default function App() {
 	                {activeTab === 'tierlist' && <BattlegroundTierList />}
                 {activeTab === 'legendaries' && <BattlegroundTierBuilderEmbed />}
                 {activeTab === 'heroes' && <BattlegroundHeroTierList />}
+                {activeTab === 'library' && (
+                  <React.Suspense fallback={<RouteFallback minHeight={760} />}>
+                    <LazyBgLibrary currentPath={locationPath} navigatePath={navigatePath} />
+                  </React.Suspense>
+                )}
                 {activeTab === 'articles' && (
                   <React.Suspense fallback={<RouteFallback minHeight={640} />}>
                     <LazyArticlesTab
