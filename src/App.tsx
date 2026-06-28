@@ -6458,7 +6458,6 @@ interface BattlegroundHeroTierEntry {
   placementDistribution?: string[];
   sourceId?: string;
   heroPower?: BattlegroundHeroRelatedCard | null;
-  buddy?: BattlegroundHeroRelatedCard | null;
 }
 
 interface BattlegroundHeroRelatedCard {
@@ -6538,7 +6537,6 @@ function groupBgHeroesFromApi(payload: any, imageByDbfId: Record<string, string>
       placementDistribution: Array.isArray(hero?.placement_distribution) ? hero.placement_distribution.map(String) : undefined,
       sourceId: payload?.source_id ? String(payload.source_id) : undefined,
       heroPower: bgHeroRelatedCard(hero?.hero_power),
-      buddy: bgHeroRelatedCard(hero?.buddy),
     });
   });
 
@@ -6730,11 +6728,11 @@ function BattlegroundHeroHoverCard({ card, label, className = '' }: { card: Batt
 }
 
 function BattlegroundHeroCard({ hero, tier }: { hero: BattlegroundHeroTierEntry; tier: string }) {
-  const hasHoverCards = Boolean(hero.heroPower || hero.buddy);
+  const hasHoverCards = Boolean(hero.heroPower);
   return (
     <article
       data-has-related={hasHoverCards ? 'true' : 'false'}
-      className="battleground-hero-card relative flex min-h-[236px] flex-col items-center overflow-visible rounded-lg border border-transparent bg-[#fff7e6]/35 p-2.5 text-center transition-all duration-200 hover:z-30 hover:border-[#d7b66a]/70 hover:bg-[#fff7e6]/85 focus-within:z-30 focus-within:border-[#d7b66a]/70 focus-within:bg-[#fff7e6]/85"
+      className="battleground-hero-card relative flex min-h-[252px] flex-col items-center overflow-hidden rounded-lg border border-transparent bg-[#fff7e6]/35 p-3 text-center transition-all duration-200 hover:z-30 hover:border-[#d7b66a]/70 hover:bg-[#fff7e6]/85 focus-within:z-30 focus-within:border-[#d7b66a]/70 focus-within:bg-[#fff7e6]/85"
     >
       <div className="relative flex w-full justify-center overflow-visible">
         <img
@@ -6748,14 +6746,7 @@ function BattlegroundHeroCard({ hero, tier }: { hero: BattlegroundHeroTierEntry;
           <BattlegroundHeroHoverCard
             card={hero.heroPower}
             label="Сила героя"
-            className="left-[54%] delay-75"
-          />
-        )}
-        {hero.buddy && (
-          <BattlegroundHeroHoverCard
-            card={hero.buddy}
-            label="Компаньон"
-            className={hero.heroPower ? 'left-[170%] delay-100' : 'left-[64%] delay-75'}
+            className="right-1 delay-75 sm:right-2"
           />
         )}
       </div>
@@ -6770,10 +6761,9 @@ function BattlegroundHeroCard({ hero, tier }: { hero: BattlegroundHeroTierEntry;
           </span>
         )}
       </div>
-      {(hero.heroPower || hero.buddy) && (
+      {hero.heroPower && (
         <span className="sr-only">
-          {hero.heroPower ? `Сила героя: ${hero.heroPower.name}. ` : ''}
-          {hero.buddy ? `Компаньон: ${hero.buddy.name}.` : ''}
+          Сила героя: {hero.heroPower.name}.
           {tier ? ` Тир ${tier}.` : ''}
         </span>
       )}
@@ -7397,7 +7387,7 @@ function BattlegroundHeroTierList() {
                     <p className="text-xs text-[#8b6c42]">{heroes.length} героев</p>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 2xl:grid-cols-6">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                   {heroes.map(hero => (
                     <React.Fragment key={`${section.tier}-${hero.name}`}>
                       <BattlegroundHeroCard hero={hero} tier={section.tier} />
