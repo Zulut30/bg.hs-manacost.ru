@@ -6732,7 +6732,7 @@ function BattlegroundHeroCard({ hero, tier }: { hero: BattlegroundHeroTierEntry;
   return (
     <article
       data-has-related={hasHoverCards ? 'true' : 'false'}
-      className="battleground-hero-card relative flex min-h-[252px] flex-col items-center overflow-hidden rounded-lg border border-transparent bg-[#fff7e6]/35 p-3 text-center transition-all duration-200 hover:z-30 hover:border-[#d7b66a]/70 hover:bg-[#fff7e6]/85 focus-within:z-30 focus-within:border-[#d7b66a]/70 focus-within:bg-[#fff7e6]/85"
+      className="battleground-hero-card relative flex min-h-[252px] flex-col items-center overflow-hidden rounded-lg p-3 text-center transition-all duration-200 hover:z-30 focus-within:z-30"
     >
       <div className="relative flex w-full justify-center overflow-visible">
         <img

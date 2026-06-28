@@ -3379,10 +3379,6 @@ function enrichBgHeroesWithLibraryData(payload: any, libraryHeroes: any[]): any 
             dbf: bgNumberOrNull(detail?.hero_power?.dbf),
             card: bgCompactHeroRelatedCard(detail?.hero_power?.card),
           },
-          buddy: {
-            dbf: bgNumberOrNull(detail?.buddy?.dbf),
-            card: bgCompactHeroRelatedCard(detail?.buddy?.card),
-          },
         };
       }),
     },
