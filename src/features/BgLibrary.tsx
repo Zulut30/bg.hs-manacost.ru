@@ -289,11 +289,13 @@ function isGeneratedArchiveToken(card: LibraryCard): boolean {
   const text = cleanSearch([cardId, card.name?.ru, card.name?.en].filter(Boolean).join(' '));
   return (
     isLikelyGoldenCardId(cardId) ||
+    /(^|_)BG34_Giant_/i.test(cardId) ||
     /(^|_)magicitem_/i.test(cardId) ||
     /^TB_BaconUps_/i.test(cardId) ||
     /_HERO_/i.test(cardId) ||
     /(^|_)HERO_/i.test(cardId) ||
     /(^|_)Bacon(BloodGem|Refresh|Pass|Tooltip)(_|$)/i.test(cardId) ||
+    /\btimewarped\b|хрономальн/.test(text) ||
     /\bbacon blood gem\b|\bbacon pass tooltip\b|\bbacon refresh\b|кровавые самоцветы|передача карт|обновление таверны/.test(text) ||
     /(?:^|_)BG[^_]*_[A-Z0-9]+t\d*$/i.test(cardId) ||
     /(?:^|_)BGS?_[A-Z0-9]+t\d*$/i.test(cardId) ||
