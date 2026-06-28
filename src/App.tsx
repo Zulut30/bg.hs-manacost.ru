@@ -6716,7 +6716,7 @@ function BattlegroundHeroHoverCard({ card, label, className = '' }: { card: Batt
   const image = card.image || card.imageGold || card.cropImage || '';
   if (!image) return null;
   return (
-    <div className={`pointer-events-none absolute top-2 z-20 w-[58%] max-w-[132px] translate-y-2 opacity-0 drop-shadow-[0_18px_22px_rgba(36,24,10,0.35)] transition duration-200 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100 ${className}`}>
+    <div className={`battleground-hero-related-card pointer-events-none absolute top-0 z-20 w-[136px] translate-y-2 opacity-0 drop-shadow-[0_18px_22px_rgba(36,24,10,0.35)] transition duration-200 sm:w-[156px] xl:w-[174px] ${className}`}>
       <img
         src={image}
         alt={`${label}: ${card.name}`}
@@ -6733,7 +6733,8 @@ function BattlegroundHeroCard({ hero, tier }: { hero: BattlegroundHeroTierEntry;
   const hasHoverCards = Boolean(hero.heroPower || hero.buddy);
   return (
     <article
-      className="group relative flex min-h-[236px] flex-col items-center overflow-visible rounded-lg border border-transparent bg-[#fff7e6]/35 p-2.5 text-center transition-all duration-200 hover:z-30 hover:border-[#d7b66a]/70 hover:bg-[#fff7e6]/85 focus-within:z-30 focus-within:border-[#d7b66a]/70 focus-within:bg-[#fff7e6]/85"
+      data-has-related={hasHoverCards ? 'true' : 'false'}
+      className="battleground-hero-card relative flex min-h-[236px] flex-col items-center overflow-visible rounded-lg border border-transparent bg-[#fff7e6]/35 p-2.5 text-center transition-all duration-200 hover:z-30 hover:border-[#d7b66a]/70 hover:bg-[#fff7e6]/85 focus-within:z-30 focus-within:border-[#d7b66a]/70 focus-within:bg-[#fff7e6]/85"
     >
       <div className="relative flex w-full justify-center overflow-visible">
         <img
@@ -6741,20 +6742,20 @@ function BattlegroundHeroCard({ hero, tier }: { hero: BattlegroundHeroTierEntry;
           alt={hero.name}
           loading="lazy"
           decoding="async"
-          className={`aspect-[3/4] w-full max-w-[184px] object-contain drop-shadow-[0_7px_14px_rgba(0,0,0,0.38)] transition duration-200 ${hasHoverCards ? 'group-hover:-translate-x-8 group-focus-within:-translate-x-8 sm:group-hover:-translate-x-10 sm:group-focus-within:-translate-x-10' : 'group-hover:-translate-y-1 group-focus-within:-translate-y-1'}`}
+          className="battleground-hero-main aspect-[3/4] w-full max-w-[184px] object-contain drop-shadow-[0_7px_14px_rgba(0,0,0,0.38)] transition duration-200"
         />
         {hero.heroPower && (
           <BattlegroundHeroHoverCard
             card={hero.heroPower}
             label="Сила героя"
-            className="left-[48%] delay-75"
+            className="left-[54%] delay-75"
           />
         )}
         {hero.buddy && (
           <BattlegroundHeroHoverCard
             card={hero.buddy}
             label="Компаньон"
-            className={hero.heroPower ? 'left-[74%] delay-100' : 'left-[54%] delay-75'}
+            className={hero.heroPower ? 'left-[150%] delay-100' : 'left-[64%] delay-75'}
           />
         )}
       </div>

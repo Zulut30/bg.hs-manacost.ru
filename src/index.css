@@ -148,6 +148,33 @@
 
 @layer utilities {
 
+  .battleground-hero-card:hover .battleground-hero-related-card,
+  .battleground-hero-card:focus-within .battleground-hero-related-card {
+    --tw-translate-y: 0;
+    opacity: 1;
+    translate: var(--tw-translate-x) var(--tw-translate-y);
+  }
+
+  .battleground-hero-card[data-has-related="true"]:hover .battleground-hero-main,
+  .battleground-hero-card[data-has-related="true"]:focus-within .battleground-hero-main {
+    --tw-translate-x: calc(var(--spacing) * -10);
+    translate: var(--tw-translate-x) var(--tw-translate-y);
+  }
+
+  .battleground-hero-card[data-has-related="false"]:hover .battleground-hero-main,
+  .battleground-hero-card[data-has-related="false"]:focus-within .battleground-hero-main {
+    --tw-translate-y: calc(var(--spacing) * -1);
+    translate: var(--tw-translate-x) var(--tw-translate-y);
+  }
+
+  @media (min-width: 40rem) {
+    .battleground-hero-card[data-has-related="true"]:hover .battleground-hero-main,
+    .battleground-hero-card[data-has-related="true"]:focus-within .battleground-hero-main {
+      --tw-translate-x: calc(var(--spacing) * -12);
+      translate: var(--tw-translate-x) var(--tw-translate-y);
+    }
+  }
+
   /* Dark wood page background */
   .bg-wood {
     position: relative;
