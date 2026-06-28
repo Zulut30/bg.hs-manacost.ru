@@ -6457,6 +6457,17 @@ interface BattlegroundHeroTierEntry {
   dbfId?: number;
   placementDistribution?: string[];
   sourceId?: string;
+  heroPower?: BattlegroundHeroRelatedCard | null;
+  buddy?: BattlegroundHeroRelatedCard | null;
+}
+
+interface BattlegroundHeroRelatedCard {
+  dbf?: number | null;
+  name: string;
+  text?: string;
+  image?: string | null;
+  imageGold?: string | null;
+  cropImage?: string | null;
 }
 
 interface BattlegroundHeroTierSection {
@@ -6498,6 +6509,20 @@ function bgHeroTierTitle(tier: string): string {
   return `${tier} Тир`;
 }
 
+function bgHeroRelatedCard(value: any): BattlegroundHeroRelatedCard | null {
+  const card = value?.card || value;
+  const image = card?.image || card?.crop_image || card?.imageGold || card?.image_gold || '';
+  if (!card || !image) return null;
+  return {
+    dbf: Number.isFinite(Number(card.dbf)) ? Number(card.dbf) : null,
+    name: String(card.name || 'Карта героя'),
+    text: card.text ? String(card.text) : '',
+    image,
+    imageGold: card.image_gold || card.imageGold || null,
+    cropImage: card.crop_image || card.cropImage || null,
+  };
+}
+
 function groupBgHeroesFromApi(payload: any, imageByDbfId: Record<string, string>): BattlegroundHeroTierSection[] {
   const heroes = Array.isArray(payload?.view?.heroes) ? payload.view.heroes : [];
   const grouped = new Map<string, BattlegroundHeroTierEntry[]>();
@@ -6512,6 +6537,8 @@ function groupBgHeroesFromApi(payload: any, imageByDbfId: Record<string, string>
       dbfId: Number.isFinite(Number(hero?.dbfId)) ? Number(hero.dbfId) : undefined,
       placementDistribution: Array.isArray(hero?.placement_distribution) ? hero.placement_distribution.map(String) : undefined,
       sourceId: payload?.source_id ? String(payload.source_id) : undefined,
+      heroPower: bgHeroRelatedCard(hero?.hero_power),
+      buddy: bgHeroRelatedCard(hero?.buddy),
     });
   });
 
@@ -6683,6 +6710,74 @@ function bgLightboxItem(item: any, list: BattlegroundTierListKey, tier: string, 
     meta: metric,
     text,
   };
+}
+
+function BattlegroundHeroHoverCard({ card, label, className = '' }: { card: BattlegroundHeroRelatedCard; label: string; className?: string }) {
+  const image = card.image || card.imageGold || card.cropImage || '';
+  if (!image) return null;
+  return (
+    <div className={`pointer-events-none absolute top-2 z-20 w-[58%] max-w-[132px] translate-y-2 opacity-0 drop-shadow-[0_18px_22px_rgba(36,24,10,0.35)] transition duration-200 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100 ${className}`}>
+      <img
+        src={image}
+        alt={`${label}: ${card.name}`}
+        loading="lazy"
+        decoding="async"
+        className="w-full object-contain"
+      />
+      <span className="sr-only">{label}: {card.name}</span>
+    </div>
+  );
+}
+
+function BattlegroundHeroCard({ hero, tier }: { hero: BattlegroundHeroTierEntry; tier: string }) {
+  const hasHoverCards = Boolean(hero.heroPower || hero.buddy);
+  return (
+    <article
+      className="group relative flex min-h-[236px] flex-col items-center overflow-visible rounded-lg border border-transparent bg-[#fff7e6]/35 p-2.5 text-center transition-all duration-200 hover:z-30 hover:border-[#d7b66a]/70 hover:bg-[#fff7e6]/85 focus-within:z-30 focus-within:border-[#d7b66a]/70 focus-within:bg-[#fff7e6]/85"
+    >
+      <div className="relative flex w-full justify-center overflow-visible">
+        <img
+          src={hero.image}
+          alt={hero.name}
+          loading="lazy"
+          decoding="async"
+          className={`aspect-[3/4] w-full max-w-[184px] object-contain drop-shadow-[0_7px_14px_rgba(0,0,0,0.38)] transition duration-200 ${hasHoverCards ? 'group-hover:-translate-x-8 group-focus-within:-translate-x-8 sm:group-hover:-translate-x-10 sm:group-focus-within:-translate-x-10' : 'group-hover:-translate-y-1 group-focus-within:-translate-y-1'}`}
+        />
+        {hero.heroPower && (
+          <BattlegroundHeroHoverCard
+            card={hero.heroPower}
+            label="Сила героя"
+            className="left-[48%] delay-75"
+          />
+        )}
+        {hero.buddy && (
+          <BattlegroundHeroHoverCard
+            card={hero.buddy}
+            label="Компаньон"
+            className={hero.heroPower ? 'left-[74%] delay-100' : 'left-[54%] delay-75'}
+          />
+        )}
+      </div>
+      <h4 className="mt-2 min-h-[2.2rem] font-hs text-sm leading-tight text-[#3d2a1e]">{hero.name}</h4>
+      <div className="mt-2 flex flex-wrap justify-center gap-1.5">
+        <span className="rounded-md border border-[#d7b66a]/70 bg-[#fff3c4] px-2.5 py-1 font-hs text-sm leading-none text-[#3d2a1e] shadow-sm">
+          {hero.averagePlace || '—'}
+        </span>
+        {hero.popularity && (
+          <span className="rounded-md border border-[#bfdbfe] bg-[#dbeafe] px-2.5 py-1 text-xs font-bold leading-none text-[#1e3a8a] shadow-sm">
+            {hero.popularity}
+          </span>
+        )}
+      </div>
+      {(hero.heroPower || hero.buddy) && (
+        <span className="sr-only">
+          {hero.heroPower ? `Сила героя: ${hero.heroPower.name}. ` : ''}
+          {hero.buddy ? `Компаньон: ${hero.buddy.name}.` : ''}
+          {tier ? ` Тир ${tier}.` : ''}
+        </span>
+      )}
+    </article>
+  );
 }
 
 function BattlegroundTierCard({ item, list, tier, index, highlighted, onOpen }: {
@@ -7303,29 +7398,9 @@ function BattlegroundHeroTierList() {
                 </div>
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 2xl:grid-cols-6">
                   {heroes.map(hero => (
-                    <article
-                      key={`${section.tier}-${hero.name}`}
-                      className="group flex flex-col items-center rounded-lg border border-transparent bg-[#fff7e6]/35 p-2.5 text-center transition-all duration-200 hover:border-[#d7b66a]/70 hover:bg-[#fff7e6]/85"
-                    >
-                      <img
-                        src={hero.image}
-                        alt={hero.name}
-                        loading="lazy"
-                        decoding="async"
-                        className="aspect-[3/4] w-full max-w-[184px] object-contain drop-shadow-[0_7px_14px_rgba(0,0,0,0.38)] transition-transform duration-200 group-hover:-translate-y-1"
-                      />
-                      <h4 className="mt-2 min-h-[2.2rem] font-hs text-sm leading-tight text-[#3d2a1e]">{hero.name}</h4>
-                      <div className="mt-2 flex flex-wrap justify-center gap-1.5">
-                        <span className="rounded-md border border-[#d7b66a]/70 bg-[#fff3c4] px-2.5 py-1 font-hs text-sm leading-none text-[#3d2a1e] shadow-sm">
-                          {hero.averagePlace || '—'}
-                        </span>
-                        {hero.popularity && (
-                          <span className="rounded-md border border-[#bfdbfe] bg-[#dbeafe] px-2.5 py-1 text-xs font-bold leading-none text-[#1e3a8a] shadow-sm">
-                            {hero.popularity}
-                          </span>
-                        )}
-                      </div>
-                    </article>
+                    <React.Fragment key={`${section.tier}-${hero.name}`}>
+                      <BattlegroundHeroCard hero={hero} tier={section.tier} />
+                    </React.Fragment>
                   ))}
                 </div>
               </section>

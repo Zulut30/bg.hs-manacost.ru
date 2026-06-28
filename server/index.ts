@@ -3323,6 +3323,72 @@ app.get('/api/bg-comps', (req, res) => proxyLegacyBattlegroundEndpoint(req, res,
 app.get('/api/card-art', (req, res) => proxyLegacyBattlegroundEndpoint(req, res, '/api/card-art'));
 app.get('/api/remote-image', (req, res) => proxyLegacyBattlegroundEndpoint(req, res, '/api/remote-image'));
 
+function bgHeroLookupKey(value: unknown): string {
+  return String(value || '').trim().toLowerCase();
+}
+
+function bgHeroDetailKeys(hero: any): string[] {
+  return [
+    hero?.dbf,
+    hero?.hero_id,
+    hero?.card_id,
+    hero?.name?.ru,
+    hero?.name?.en,
+  ].map(bgHeroLookupKey).filter(Boolean);
+}
+
+function bgHsReplayHeroKeys(hero: any): string[] {
+  return [
+    hero?.dbfId,
+    hero?.id,
+    hero?.hero,
+    hero?.name,
+  ].map(bgHeroLookupKey).filter(Boolean);
+}
+
+function bgCompactHeroRelatedCard(card: any): any {
+  if (!card || typeof card !== 'object') return null;
+  return {
+    dbf: bgNumberOrNull(card.dbf),
+    name: card.name || '',
+    text: stripBattlegroundHtml(card.text),
+    image: card.image || null,
+    image_gold: card.image_gold || card.golden?.image || null,
+    crop_image: card.crop_image || null,
+  };
+}
+
+function enrichBgHeroesWithLibraryData(payload: any, libraryHeroes: any[]): any {
+  const byKey = new Map<string, any>();
+  for (const hero of libraryHeroes) {
+    for (const key of bgHeroDetailKeys(hero)) {
+      if (!byKey.has(key)) byKey.set(key, hero);
+    }
+  }
+
+  return {
+    ...payload,
+    view: {
+      ...(payload?.view || {}),
+      heroes: (payload?.view?.heroes || []).map((hero: any) => {
+        const detail = bgHsReplayHeroKeys(hero).map(key => byKey.get(key)).find(Boolean);
+        if (!detail) return hero;
+        return {
+          ...hero,
+          hero_power: {
+            dbf: bgNumberOrNull(detail?.hero_power?.dbf),
+            card: bgCompactHeroRelatedCard(detail?.hero_power?.card),
+          },
+          buddy: {
+            dbf: bgNumberOrNull(detail?.buddy?.dbf),
+            card: bgCompactHeroRelatedCard(detail?.buddy?.card),
+          },
+        };
+      }),
+    },
+  };
+}
+
 app.get('/api/bg/heroes', async (req, res) => {
   try {
     const payload = await fetchJsonWithTimeout(BG_HEROES_API_URL, {
@@ -3331,9 +3397,17 @@ app.get('/api/bg/heroes', async (req, res) => {
     if (!payload?.ok || !Array.isArray(payload?.view?.heroes)) {
       return res.status(502).json({ error: 'BG heroes source returned an invalid payload' });
     }
-    const etagBase = `${payload.fetched_at || Date.now()}-${payload.view.heroes.length}`;
+
+    const libraryPayload = await fetchJsonWithTimeout(`${BG_LIBRARY_API_BASE}/heroes?per_page=200`, {
+      headers: { Accept: 'application/json' },
+    }, 20_000).catch(() => null);
+    const libraryHeroes = Array.isArray(libraryPayload?.data) ? libraryPayload.data : [];
+    const data = libraryHeroes.length ? enrichBgHeroesWithLibraryData(payload, libraryHeroes) : payload;
+
+    const libraryUpdated = libraryHeroes.map((hero: any) => hero?.updated_at || hero?.card_id || hero?.dbf).join('|');
+    const etagBase = `${payload.fetched_at || Date.now()}-${payload.view.heroes.length}-${libraryHeroes.length}-${libraryUpdated}`;
     const etag = `"bg-heroes-${createHash('sha1').update(etagBase).digest('hex').slice(0, 16)}"`;
-    return sendJsonCached(req, res, payload, etag, 'public, max-age=300, stale-while-revalidate=900');
+    return sendJsonCached(req, res, data, etag, 'public, max-age=300, stale-while-revalidate=900');
   } catch (err: any) {
     return res.status(502).json({ error: err?.message ?? 'BG heroes unavailable' });
   }
