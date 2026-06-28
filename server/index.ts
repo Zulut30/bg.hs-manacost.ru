@@ -1797,6 +1797,7 @@ async function fetchArenaDecksData(limit = ARENA_DECKS_MAX_LIMIT) {
 const DATASET_API_ORIGIN = 'https://api.hs-manacost.ru';
 const DATASET_API_BASE = `${DATASET_API_ORIGIN}/datasets`;
 const BG_HEROES_API_URL = `${DATASET_API_ORIGIN}/demo/view/hsreplay_battlegrounds_heroes`;
+const BG_HERO_DETAILS_API_BASE = `${DATASET_API_ORIGIN}/api/bg/heroes`;
 const BG_LIBRARY_API_BASE = 'https://db.kolodahs.ru/api/v1';
 const BG_CARD_ASSET_PUBLIC_BASE = 'https://db.kolodahs.ru/uploads';
 const BG_CARD_ASSET_ROOT = '/var/www/koloda/data/www/db.kolodahs.ru/uploads';
@@ -3358,6 +3359,77 @@ function bgCompactHeroRelatedCard(card: any): any {
   };
 }
 
+function bgLibraryLocalizedName(value: any): string {
+  if (!value) return '';
+  if (typeof value === 'string') return value;
+  return value.ru || value.en || value.name_ru || value.name || '';
+}
+
+function bgCompactLibraryCard(card: any): any {
+  if (!card || typeof card !== 'object') return null;
+  const images = card.images || {};
+  const creatureType = card.creature_type || {};
+  return {
+    dbf: bgNumberOrNull(card.dbf),
+    card_id: card.card_id || card.id || null,
+    name: bgLibraryLocalizedName(card.name),
+    text: stripBattlegroundHtml(card.text_ru || card.text),
+    image: images.framed || images.card || card.image || null,
+    image_gold: images.golden || card.image_gold || card.golden?.image || null,
+    crop_image: images.art || card.crop_image || null,
+    tavern_tier: bgNumberOrNull(card.tavern_tier || card.techLevel || card.tech_level),
+    creature_type: creatureType.slug || card.race || null,
+    creature_type_name: creatureType.name_ru || card.raceRu || null,
+    card_type: card.card_type?.slug || card.card_type || card.type || null,
+  };
+}
+
+function bgCompactHeroLibraryDetail(hero: any): any {
+  if (!hero || typeof hero !== 'object') return null;
+  const buddyCard = hero?.buddy?.card || null;
+  const heroPowerCard = hero?.hero_power?.card || null;
+  const compactBuddy = bgCompactHeroRelatedCard(buddyCard);
+  const skins = (hero?.wiki?.hero_skins || [])
+    .flatMap((group: any) => Array.isArray(group?.cards) ? group.cards : [])
+    .map((skin: any) => ({
+      card_id: skin.card_id || null,
+      title: String(skin.title || '').replace(/^Battlegrounds\//, ''),
+      image: skin.image_url || null,
+      url: skin.url || null,
+    }))
+    .filter((skin: any) => skin.image);
+  const goldenBuddy = buddyCard?.golden
+    ? {
+        dbf: bgNumberOrNull(buddyCard.golden.dbf),
+        card_id: buddyCard.golden.card_id || null,
+        name: buddyCard.golden.name || compactBuddy?.name || '',
+        text: stripBattlegroundHtml(buddyCard.golden.text || ''),
+        image: buddyCard.golden.image || buddyCard.image_gold || null,
+      }
+    : null;
+  return {
+    dbf: bgNumberOrNull(hero.dbf),
+    card_id: hero.card_id || null,
+    hero_id: hero.hero_id || null,
+    name: hero.name || null,
+    health: bgNumberOrNull(hero.health),
+    armor: hero.armor ?? null,
+    race: hero.race || null,
+    images: hero.images || null,
+    hero_power: {
+      dbf: bgNumberOrNull(hero?.hero_power?.dbf),
+      card: bgCompactHeroRelatedCard(heroPowerCard),
+    },
+    buddy: {
+      dbf: bgNumberOrNull(hero?.buddy?.dbf),
+      card: compactBuddy,
+      golden: goldenBuddy,
+    },
+    skins,
+    updated_at: hero.updated_at || null,
+  };
+}
+
 function enrichBgHeroesWithLibraryData(payload: any, libraryHeroes: any[]): any {
   const byKey = new Map<string, any>();
   for (const hero of libraryHeroes) {
@@ -3406,6 +3478,63 @@ app.get('/api/bg/heroes', async (req, res) => {
     return sendJsonCached(req, res, data, etag, 'public, max-age=300, stale-while-revalidate=900');
   } catch (err: any) {
     return res.status(502).json({ error: err?.message ?? 'BG heroes unavailable' });
+  }
+});
+
+app.get('/api/bg/heroes/:dbfId/details', async (req, res) => {
+  const dbfId = Number(req.params.dbfId);
+  if (!Number.isFinite(dbfId) || dbfId <= 0) {
+    return res.status(400).json({ error: 'Invalid hero dbfId' });
+  }
+
+  try {
+    const [stats, libraryPayload] = await Promise.all([
+      fetchJsonWithTimeout(`${BG_HERO_DETAILS_API_BASE}/${dbfId}`, {
+        headers: { Accept: 'application/json' },
+      }, 20_000),
+      fetchJsonWithTimeout(`${BG_LIBRARY_API_BASE}/heroes?per_page=200`, {
+        headers: { Accept: 'application/json' },
+      }, 20_000).catch(() => null),
+    ]);
+
+    const libraryHeroes = Array.isArray(libraryPayload?.data) ? libraryPayload.data : [];
+    const libraryHero = libraryHeroes.find((hero: any) => Number(hero?.dbf) === dbfId)
+      || libraryHeroes.find((hero: any) => bgHeroLookupKey(hero?.name?.en) === bgHeroLookupKey(stats?.hero?.hero))
+      || null;
+
+    const cardDbfs = new Set<number>();
+    const collectCard = (card: any) => {
+      const value = Number(card?.dbfId || card?.dbf || card?.minion_dbf_id);
+      if (Number.isFinite(value) && value > 0) cardDbfs.add(value);
+    };
+    (stats?.best_composition?.lineup || []).forEach(collectCard);
+    (stats?.best_composition?.final_form_minions || []).slice(0, 16).forEach(collectCard);
+    (stats?.hero?.key_minions_top3 || []).forEach(collectCard);
+
+    const cards: Record<string, any> = {};
+    await Promise.all(Array.from(cardDbfs).map(async cardDbf => {
+      try {
+        const payload = await fetchJsonWithTimeout(`${BG_LIBRARY_API_BASE}/cards/by-dbf/${cardDbf}`, {
+          headers: { Accept: 'application/json' },
+        }, 12_000);
+        const compact = bgCompactLibraryCard(payload?.data || payload);
+        if (compact) cards[String(cardDbf)] = compact;
+      } catch {
+        // Individual card art is non-critical; stats still render.
+      }
+    }));
+
+    const etagBase = `${dbfId}-${stats?.as_of ? JSON.stringify(stats.as_of) : ''}-${libraryHero?.updated_at || ''}-${Object.keys(cards).join('|')}`;
+    const etag = `"bg-hero-detail-${createHash('sha1').update(etagBase).digest('hex').slice(0, 16)}"`;
+    return sendJsonCached(req, res, {
+      ok: true,
+      stats,
+      libraryHero: bgCompactHeroLibraryDetail(libraryHero),
+      cards,
+      fetched_at: new Date().toISOString(),
+    }, etag, 'public, max-age=300, stale-while-revalidate=900');
+  } catch (err: any) {
+    return res.status(502).json({ error: err?.message ?? 'BG hero detail unavailable' });
   }
 });
 
