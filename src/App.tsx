@@ -6755,7 +6755,7 @@ function BattlegroundHeroCard({ hero, tier }: { hero: BattlegroundHeroTierEntry;
           <BattlegroundHeroHoverCard
             card={hero.buddy}
             label="Компаньон"
-            className={hero.heroPower ? 'left-[150%] delay-100' : 'left-[64%] delay-75'}
+            className={hero.heroPower ? 'left-[170%] delay-100' : 'left-[64%] delay-75'}
           />
         )}
       </div>
